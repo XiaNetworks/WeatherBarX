@@ -1,38 +1,58 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
-@MainActor
-final class WeatherViewModel: ObservableObject {
-    @Published var locationName = "WeatherX"
-    @Published var summary = "Placeholder weather"
-    @Published var conditionSymbol = "☀️"
-    @Published var temperatureText = "72°"
+private enum AppLaunchMode {
+    static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-testing")
+    }
+}
 
-    var menuBarTitle: String {
-        "\(conditionSymbol) \(temperatureText)"
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var harnessWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard AppLaunchMode.isUITesting else {
+            return
+        }
+
+        NSApplication.shared.setActivationPolicy(.regular)
+
+        let viewModel = WeatherViewModel()
+        let rootView = StatusItemTestHarnessView(viewModel: viewModel) {
+            NSApplication.shared.terminate(nil)
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 220),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.title = "WeatherX Test Harness"
+        window.contentView = NSHostingView(rootView: rootView)
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        harnessWindow = window
     }
 }
 
 @main
 struct WeatherXApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = WeatherViewModel()
 
     var body: some Scene {
         MenuBarExtra {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(viewModel.locationName)
-                    .font(.headline)
-                Text(viewModel.summary)
-                    .foregroundStyle(.secondary)
-                Divider()
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-            }
-            .padding()
-            .frame(width: 200)
+            MenuContentView(viewModel: viewModel, onQuit: quit)
         } label: {
             Text(viewModel.menuBarTitle)
+                .accessibilityIdentifier("status-item-button")
         }
+    }
+
+    private func quit() {
+        NSApplication.shared.terminate(nil)
     }
 }
