@@ -26,7 +26,7 @@ final class WeatherViewModelTests: XCTestCase {
 
         let settings = WeatherSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.locationName, "WeatherX")
+        XCTAssertEqual(settings.locationName, "WeatherBarX")
         XCTAssertTrue(settings.usesPlaceholderWeather)
     }
 

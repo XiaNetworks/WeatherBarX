@@ -4,7 +4,7 @@ struct WeatherSettings: Equatable {
     static let locationNameKey = "locationName"
     static let usesPlaceholderWeatherKey = "usesPlaceholderWeather"
 
-    static let defaultLocationName = "WeatherX"
+    static let defaultLocationName = "WeatherBarX"
     static let defaultUsesPlaceholderWeather = true
 
     let locationName: String
