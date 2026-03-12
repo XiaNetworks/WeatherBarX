@@ -1,14 +1,28 @@
 import SwiftUI
 import AppKit
 
+@MainActor
+final class WeatherViewModel: ObservableObject {
+    @Published var locationName = "WeatherX"
+    @Published var summary = "Placeholder weather"
+    @Published var conditionSymbol = "☀️"
+    @Published var temperatureText = "72°"
+
+    var menuBarTitle: String {
+        "\(conditionSymbol) \(temperatureText)"
+    }
+}
+
 @main
 struct WeatherXApp: App {
+    @StateObject private var viewModel = WeatherViewModel()
+
     var body: some Scene {
         MenuBarExtra {
             VStack(alignment: .leading, spacing: 8) {
-                Text("WeatherX")
+                Text(viewModel.locationName)
                     .font(.headline)
-                Text("Placeholder weather")
+                Text(viewModel.summary)
                     .foregroundStyle(.secondary)
                 Divider()
                 Button("Quit") {
@@ -18,7 +32,7 @@ struct WeatherXApp: App {
             .padding()
             .frame(width: 200)
         } label: {
-            Text("☀️ 72°")
+            Text(viewModel.menuBarTitle)
         }
     }
 }
