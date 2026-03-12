@@ -1,6 +1,6 @@
 APP_NAME := WeatherBarX
-PROJECT := weatherX.xcodeproj
-SCHEME := weatherX
+PROJECT := WeatherBarX.xcodeproj
+SCHEME := WeatherBarX
 CONFIGURATION := Debug
 DERIVED_DATA := /tmp/$(APP_NAME)DerivedData
 BUILD_APP := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME).app

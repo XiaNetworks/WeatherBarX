@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct WeatherXApp: App {
+struct WeatherBarXApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = WeatherViewModel()
 

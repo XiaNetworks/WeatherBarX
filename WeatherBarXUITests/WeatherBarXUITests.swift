@@ -1,6 +1,6 @@
 import XCTest
 
-final class weatherXUITests: XCTestCase {
+final class WeatherBarXUITests: XCTestCase {
     func testAppLaunchesSuccessfully() {
         let app = makeApp()
 
