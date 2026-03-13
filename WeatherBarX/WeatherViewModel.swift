@@ -2,7 +2,7 @@ import CoreLocation
 import Foundation
 import ServiceManagement
 
-struct WeatherSnapshot: Equatable {
+struct WeatherSnapshot: Codable, Equatable {
     let summary: String
     let temperature: Int?
     let condition: WeatherCondition
@@ -212,6 +212,11 @@ struct LaunchAtLoginManager: LaunchAtLoginManaging {
             try SMAppService.mainApp.unregister()
         }
     }
+}
+
+struct CachedWeatherEntry: Codable, Equatable {
+    let snapshot: WeatherSnapshot
+    let checkedAt: Date
 }
 
 struct OpenMeteoForecastResponse: Decodable {
@@ -512,7 +517,10 @@ final class WeatherViewModel: ObservableObject {
     private let successRefreshDelay: @Sendable () -> Duration
     private let now: @Sendable () -> Date
     private let sleep: @Sendable (Duration) async -> Void
+    private var cachedWeatherByLocation: [String: CachedWeatherEntry]
     private var refreshTask: Task<Void, Never>?
+
+    private static let cacheFreshnessInterval: TimeInterval = 15 * 60
 
     init(
         defaults: UserDefaults = .standard,
@@ -550,9 +558,10 @@ final class WeatherViewModel: ObservableObject {
         self.successRefreshDelay = successRefreshDelay
         self.now = now
         self.sleep = sleep
+        self.cachedWeatherByLocation = Self.decodeCachedWeather(from: defaults.data(forKey: WeatherSettings.cachedWeatherByLocationKey)) ?? [:]
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
-            startRefreshLoop(showLoadingState: false)
+            restoreCachedWeatherIfFreshForCurrentLocation()
         }
     }
 
@@ -655,6 +664,18 @@ final class WeatherViewModel: ObservableObject {
     }
 
     func refreshWeather() async {
+        await refreshWeather(after: nil)
+    }
+
+    private func refreshWeather(after initialDelay: Duration?) async {
+        if let initialDelay {
+            await sleep(initialDelay)
+
+            if Task.isCancelled {
+                return
+            }
+        }
+
         while !Task.isCancelled {
             let didSucceed = await runRefreshCycle()
             guard didSucceed else {
@@ -811,6 +832,14 @@ final class WeatherViewModel: ObservableObject {
         if settings.usesPlaceholderWeather {
             isLoading = false
             snapshot = .placeholder
+            return
+        }
+
+        if let cachedEntry = cachedEntryForCurrentLocation() {
+            isLoading = false
+            snapshot = cachedEntry.snapshot
+            lastCheckAt = cachedEntry.checkedAt
+            startRefreshLoop(showLoadingState: false, initialDelay: cacheRefreshDelay(from: cachedEntry.checkedAt))
         } else {
             startRefreshLoop(showLoadingState: true)
         }
@@ -834,7 +863,7 @@ final class WeatherViewModel: ObservableObject {
         defaults.synchronize()
     }
 
-    private func startRefreshLoop(showLoadingState: Bool) {
+    private func startRefreshLoop(showLoadingState: Bool, initialDelay: Duration? = nil) {
         refreshTask?.cancel()
 
         if showLoadingState {
@@ -842,7 +871,7 @@ final class WeatherViewModel: ObservableObject {
         }
 
         refreshTask = Task { [weak self] in
-            await self?.refreshWeather()
+            await self?.refreshWeather(after: initialDelay)
         }
     }
 
@@ -920,11 +949,14 @@ final class WeatherViewModel: ObservableObject {
 
     private func fetchSnapshot() async -> Result<WeatherSnapshot, WeatherServiceError> {
         do {
+            let location = currentLocation
             let snapshot = try await weatherService.fetchCurrentWeather(
-                latitude: currentLocation.latitude,
-                longitude: currentLocation.longitude
+                latitude: location.latitude,
+                longitude: location.longitude
             )
-            lastCheckAt = now()
+            let checkedAt = now()
+            lastCheckAt = checkedAt
+            cache(snapshot: snapshot, checkedAt: checkedAt, for: location)
             return .success(snapshot)
         } catch let error as WeatherServiceError {
             lastCheckAt = now()
@@ -933,6 +965,67 @@ final class WeatherViewModel: ObservableObject {
             lastCheckAt = now()
             return .failure(.requestFailed)
         }
+    }
+
+    private func restoreCachedWeatherIfFreshForCurrentLocation() {
+        if let cachedEntry = cachedEntryForCurrentLocation() {
+            isLoading = false
+            snapshot = cachedEntry.snapshot
+            lastCheckAt = cachedEntry.checkedAt
+            startRefreshLoop(showLoadingState: false, initialDelay: cacheRefreshDelay(from: cachedEntry.checkedAt))
+        } else {
+            startRefreshLoop(showLoadingState: false)
+        }
+    }
+
+    private func cachedEntryForCurrentLocation(referenceDate: Date? = nil) -> CachedWeatherEntry? {
+        cachedEntry(for: currentLocation, referenceDate: referenceDate)
+    }
+
+    private func cachedEntry(for location: SavedLocation, referenceDate: Date? = nil) -> CachedWeatherEntry? {
+        let referenceDate = referenceDate ?? now()
+        guard let entry = cachedWeatherByLocation[cacheKey(for: location)] else {
+            return nil
+        }
+
+        guard referenceDate.timeIntervalSince(entry.checkedAt) < Self.cacheFreshnessInterval else {
+            return nil
+        }
+
+        return entry
+    }
+
+    private func cacheRefreshDelay(from checkedAt: Date) -> Duration? {
+        let age = now().timeIntervalSince(checkedAt)
+        let remaining = Self.cacheFreshnessInterval - age
+        guard remaining > 0 else {
+            return nil
+        }
+
+        return .seconds(Int(remaining.rounded(.up)))
+    }
+
+    private func cache(snapshot: WeatherSnapshot, checkedAt: Date, for location: SavedLocation) {
+        cachedWeatherByLocation[cacheKey(for: location)] = CachedWeatherEntry(snapshot: snapshot, checkedAt: checkedAt)
+        persistCachedWeather()
+    }
+
+    private func persistCachedWeather() {
+        if let data = try? JSONEncoder().encode(cachedWeatherByLocation) {
+            defaults.set(data, forKey: WeatherSettings.cachedWeatherByLocationKey)
+        }
+    }
+
+    private func cacheKey(for location: SavedLocation) -> String {
+        "\(location.name)|\(location.latitude)|\(location.longitude)"
+    }
+
+    private static func decodeCachedWeather(from data: Data?) -> [String: CachedWeatherEntry]? {
+        guard let data else {
+            return nil
+        }
+
+        return try? JSONDecoder().decode([String: CachedWeatherEntry].self, from: data)
     }
 
     private func snapshotForError(_ error: WeatherServiceError) -> WeatherSnapshot {

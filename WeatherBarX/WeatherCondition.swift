@@ -1,4 +1,4 @@
-enum WeatherCondition: String, Equatable {
+enum WeatherCondition: String, Codable, Equatable {
     case placeholder
     case networkError
     case apiError

@@ -299,6 +299,100 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(reloadedSettings.locationName, "Washington, DC")
     }
 
+    func testSelectingLocationUsesFreshCachedWeatherBeforeFetching() async {
+        let defaults = makeDefaults()
+        let cachedSnapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 44,
+            condition: .cloudy,
+            isDaylight: true,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 49,
+            highTemperatureAt: nil,
+            lowTemperature: 38,
+            lowTemperatureAt: nil
+        )
+        let cachedAt = Date(timeIntervalSince1970: 1_731_447_600)
+        let clock = MutableNowBox(cachedAt.addingTimeInterval(5 * 60))
+        let service = CountingWeatherService(snapshotByCoordinate: [
+            coordinateKey(latitude: WeatherSettings.defaultLatitude, longitude: WeatherSettings.defaultLongitude): .placeholder,
+        ])
+        persistCachedWeather(defaults: defaults, entries: [
+            cacheKey(for: WeatherSettings.defaultPrimaryLocation): CachedWeatherEntry(snapshot: cachedSnapshot, checkedAt: cachedAt),
+        ])
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            now: { clock.current }
+        )
+
+        viewModel.selectLocation(at: 0)
+
+        let fetchCount = await service.fetchCount(latitude: WeatherSettings.defaultLatitude, longitude: WeatherSettings.defaultLongitude)
+
+        XCTAssertFalse(viewModel.isLoading)
+        XCTAssertEqual(viewModel.summaryText, "Cloudy")
+        XCTAssertEqual(viewModel.temperatureText, "44°")
+        XCTAssertEqual(fetchCount, 0)
+    }
+
+    func testSelectingLocationFetchesWhenCachedWeatherIsOlderThanFifteenMinutes() async {
+        let defaults = makeDefaults()
+        let staleSnapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 44,
+            condition: .cloudy,
+            isDaylight: true,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 49,
+            highTemperatureAt: nil,
+            lowTemperature: 38,
+            lowTemperatureAt: nil
+        )
+        let freshSnapshot = WeatherSnapshot(
+            summary: "Clear sky",
+            temperature: 51,
+            condition: .clear,
+            isDaylight: true,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 55,
+            highTemperatureAt: nil,
+            lowTemperature: 40,
+            lowTemperatureAt: nil
+        )
+        let cachedAt = Date(timeIntervalSince1970: 1_731_447_600)
+        let clock = MutableNowBox(cachedAt.addingTimeInterval(16 * 60))
+        let service = CountingWeatherService(snapshotByCoordinate: [
+            coordinateKey(latitude: WeatherSettings.defaultLatitude, longitude: WeatherSettings.defaultLongitude): freshSnapshot,
+        ])
+        persistCachedWeather(defaults: defaults, entries: [
+            cacheKey(for: WeatherSettings.defaultPrimaryLocation): CachedWeatherEntry(snapshot: staleSnapshot, checkedAt: cachedAt),
+        ])
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [],
+            postErrorRetryDelays: [],
+            successRefreshDelay: { .seconds(600) },
+            now: { clock.current }
+        )
+
+        viewModel.selectLocation(at: 0)
+        await waitUntil { !viewModel.isLoading }
+        let fetchCount = await service.fetchCount(latitude: WeatherSettings.defaultLatitude, longitude: WeatherSettings.defaultLongitude)
+
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(viewModel.summaryText, "Clear sky")
+        XCTAssertEqual(viewModel.temperatureText, "51°")
+    }
+
     func testDeletingSavedAlternateLocationClearsItsSlotAndPersists() {
         let defaults = makeDefaults()
         let viewModel = WeatherViewModel(
@@ -796,6 +890,19 @@ private final class TaskBox: @unchecked Sendable {
     var task: Task<Void, Never>?
 }
 
+private func persistCachedWeather(defaults: UserDefaults, entries: [String: CachedWeatherEntry]) {
+    let data = try? JSONEncoder().encode(entries)
+    defaults.set(data, forKey: WeatherSettings.cachedWeatherByLocationKey)
+}
+
+private func cacheKey(for location: SavedLocation) -> String {
+    "\(location.name)|\(location.latitude)|\(location.longitude)"
+}
+
+private func coordinateKey(latitude: Double, longitude: Double) -> String {
+    "\(latitude),\(longitude)"
+}
+
 private final class MutableNowBox: @unchecked Sendable {
     var current: Date
 
@@ -892,6 +999,25 @@ private struct PendingWeatherService: WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
         try? await Task.sleep(for: .seconds(60))
         return .placeholder
+    }
+}
+
+private actor CountingWeatherService: WeatherServing {
+    private let snapshotByCoordinate: [String: WeatherSnapshot]
+    private var countsByCoordinate: [String: Int] = [:]
+
+    init(snapshotByCoordinate: [String: WeatherSnapshot]) {
+        self.snapshotByCoordinate = snapshotByCoordinate
+    }
+
+    func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        let key = coordinateKey(latitude: latitude, longitude: longitude)
+        countsByCoordinate[key, default: 0] += 1
+        return snapshotByCoordinate[key] ?? .placeholder
+    }
+
+    func fetchCount(latitude: Double, longitude: Double) -> Int {
+        countsByCoordinate[coordinateKey(latitude: latitude, longitude: longitude), default: 0]
     }
 }
 
