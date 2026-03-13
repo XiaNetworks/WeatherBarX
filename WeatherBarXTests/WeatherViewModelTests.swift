@@ -202,6 +202,24 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
+    func testLaunchAtLoginToggleUpdatesButtonState() {
+        let launchAtLoginManager = MockLaunchAtLoginManager(isEnabled: false)
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            launchAtLoginManager: launchAtLoginManager,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertFalse(viewModel.isLaunchAtLoginEnabled)
+
+        viewModel.toggleLaunchAtLogin()
+
+        XCTAssertTrue(viewModel.isLaunchAtLoginEnabled)
+        XCTAssertEqual(launchAtLoginManager.setEnabledCalls, [true])
+    }
+
     func testTemperatureUnitToggleConvertsDisplayedTemperatures() {
         let viewModel = makePlaceholderViewModel()
 
@@ -673,6 +691,20 @@ private actor GatedWeatherService: WeatherServing {
 private struct MockWeatherService: WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
         .placeholder
+    }
+}
+
+private final class MockLaunchAtLoginManager: LaunchAtLoginManaging {
+    private(set) var isEnabled: Bool
+    private(set) var setEnabledCalls: [Bool] = []
+
+    init(isEnabled: Bool) {
+        self.isEnabled = isEnabled
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        setEnabledCalls.append(enabled)
+        isEnabled = enabled
     }
 }
 

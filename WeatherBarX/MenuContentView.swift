@@ -119,6 +119,14 @@ struct MenuContentView: View {
 
                 Spacer()
 
+                Button(action: viewModel.toggleLaunchAtLogin) {
+                    Label(viewModel.launchAtLoginButtonText, systemImage: viewModel.isLaunchAtLoginEnabled ? "checkmark.circle.fill" : "circle")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("launch-at-login-button")
+
                 Button(viewModel.temperatureUnitButtonText, action: viewModel.toggleTemperatureUnit)
                     .buttonStyle(.bordered)
                     .controlSize(.small)

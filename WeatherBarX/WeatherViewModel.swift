@@ -1,4 +1,5 @@
 import Foundation
+import ServiceManagement
 
 struct WeatherSnapshot: Equatable {
     let summary: String
@@ -54,6 +55,11 @@ struct WeatherSnapshot: Equatable {
 
 protocol WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot
+}
+
+protocol LaunchAtLoginManaging {
+    var isEnabled: Bool { get }
+    func setEnabled(_ enabled: Bool) throws
 }
 
 enum WeatherServiceError: Error, Equatable {
@@ -175,6 +181,27 @@ struct OpenMeteoWeatherService: WeatherServing {
             lowTemperature: extrema.low.map { roundedTemperature(from: $0.temperature) },
             lowTemperatureAt: extrema.low?.time
         )
+    }
+}
+
+struct LaunchAtLoginManager: LaunchAtLoginManaging {
+    var isEnabled: Bool {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            return true
+        case .notRegistered, .notFound, .requiresApproval:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        if enabled {
+            try SMAppService.mainApp.register()
+        } else {
+            try SMAppService.mainApp.unregister()
+        }
     }
 }
 
@@ -329,10 +356,12 @@ final class WeatherViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool
     @Published private(set) var snapshot: WeatherSnapshot
     @Published private(set) var lastCheckAt: Date?
+    @Published private(set) var isLaunchAtLoginEnabled: Bool
     @Published private(set) var temperatureUnit: TemperatureUnit
 
     let settings: WeatherSettings
     private let defaults: UserDefaults
+    private let launchAtLoginManager: any LaunchAtLoginManaging
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
     private let postErrorRetryDelays: [Duration]
@@ -344,6 +373,7 @@ final class WeatherViewModel: ObservableObject {
     init(
         defaults: UserDefaults = .standard,
         snapshot: WeatherSnapshot? = nil,
+        launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginManager(),
         weatherService: WeatherServing = OpenMeteoWeatherService(),
         refreshOnInit: Bool = true,
         retryDelays: [Duration] = [.seconds(10), .seconds(20), .seconds(30)],
@@ -361,7 +391,9 @@ final class WeatherViewModel: ObservableObject {
         self.defaults = defaults
         self.snapshot = snapshot ?? .placeholder
         self.isLoading = refreshOnInit && !settings.usesPlaceholderWeather
+        self.isLaunchAtLoginEnabled = launchAtLoginManager.isEnabled
         self.temperatureUnit = settings.temperatureUnit
+        self.launchAtLoginManager = launchAtLoginManager
         self.weatherService = weatherService
         self.retryDelays = retryDelays
         self.postErrorRetryDelays = postErrorRetryDelays
@@ -400,6 +432,10 @@ final class WeatherViewModel: ObservableObject {
 
     var temperatureUnitButtonText: String {
         temperatureUnit.displayText
+    }
+
+    var launchAtLoginButtonText: String {
+        "Launch at Login"
     }
 
     var conditionIconName: String {
@@ -486,6 +522,17 @@ final class WeatherViewModel: ObservableObject {
         temperatureUnit.toggle()
         defaults.set(temperatureUnit.rawValue, forKey: WeatherSettings.temperatureUnitKey)
         objectWillChange.send()
+    }
+
+    func toggleLaunchAtLogin() {
+        let nextValue = !isLaunchAtLoginEnabled
+
+        do {
+            try launchAtLoginManager.setEnabled(nextValue)
+            isLaunchAtLoginEnabled = launchAtLoginManager.isEnabled
+        } catch {
+            isLaunchAtLoginEnabled = launchAtLoginManager.isEnabled
+        }
     }
 
     func toggleMenuPresentation() {
