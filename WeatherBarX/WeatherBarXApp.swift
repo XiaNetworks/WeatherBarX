@@ -17,7 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApplication.shared.setActivationPolicy(.regular)
 
-        let viewModel = WeatherViewModel()
+        let defaults = UserDefaults(suiteName: "WeatherBarXUITesting")!
+        defaults.set(true, forKey: WeatherSettings.usesPlaceholderWeatherKey)
+
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            refreshOnInit: false
+        )
         let rootView = StatusItemTestHarnessView(viewModel: viewModel) {
             NSApplication.shared.terminate(nil)
         }

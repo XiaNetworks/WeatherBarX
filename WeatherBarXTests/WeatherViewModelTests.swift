@@ -4,19 +4,19 @@ import XCTest
 @MainActor
 final class WeatherViewModelTests: XCTestCase {
     func testPlaceholderTemperatureFormatsCorrectly() {
-        let viewModel = WeatherViewModel(defaults: makeDefaults())
+        let viewModel = makePlaceholderViewModel()
 
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
     func testPlaceholderStateProducesExpectedStatusBarText() {
-        let viewModel = WeatherViewModel(defaults: makeDefaults())
+        let viewModel = makePlaceholderViewModel()
 
         XCTAssertEqual(viewModel.menuBarTitle, "☀️ 72°")
     }
 
     func testPlaceholderConditionMapsToCorrectIconName() {
-        let viewModel = WeatherViewModel(defaults: makeDefaults())
+        let viewModel = makePlaceholderViewModel()
 
         XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
     }
@@ -27,7 +27,16 @@ final class WeatherViewModelTests: XCTestCase {
         let settings = WeatherSettings(defaults: defaults)
 
         XCTAssertEqual(settings.locationName, "WeatherBarX")
-        XCTAssertTrue(settings.usesPlaceholderWeather)
+        XCTAssertEqual(settings.latitude, 40.7128)
+        XCTAssertEqual(settings.longitude, -74.0060)
+        XCTAssertFalse(settings.usesPlaceholderWeather)
+    }
+
+    func testWeatherCodeMapsToRainCondition() {
+        let condition = WeatherCondition(weatherCode: 61, isDaylight: true)
+
+        XCTAssertEqual(condition.symbol, "🌧️")
+        XCTAssertEqual(condition.iconName, "cloud.rain.fill")
     }
 
     private func makeDefaults() -> UserDefaults {
@@ -38,5 +47,20 @@ final class WeatherViewModelTests: XCTestCase {
             defaults.removePersistentDomain(forName: suiteName)
         }
         return defaults
+    }
+
+    private func makePlaceholderViewModel() -> WeatherViewModel {
+        WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+    }
+}
+
+private struct MockWeatherService: WeatherServing {
+    func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        .placeholder
     }
 }
