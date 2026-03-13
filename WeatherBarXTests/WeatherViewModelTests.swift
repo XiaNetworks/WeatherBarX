@@ -9,10 +9,11 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
-    func testPlaceholderStateProducesExpectedStatusBarText() {
+    func testPlaceholderStateProducesExpectedStatusItemValues() {
         let viewModel = makePlaceholderViewModel()
 
-        XCTAssertEqual(viewModel.menuBarTitle, "☀️ 72°")
+        XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
+        XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
     func testPlaceholderConditionMapsToCorrectIconName() {
@@ -35,7 +36,6 @@ final class WeatherViewModelTests: XCTestCase {
     func testWeatherCodeMapsToRainCondition() {
         let condition = WeatherCondition(weatherCode: 61, isDaylight: true)
 
-        XCTAssertEqual(condition.symbol, "🌧️")
         XCTAssertEqual(condition.iconName, "cloud.rain.fill")
     }
 

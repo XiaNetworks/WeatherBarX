@@ -189,17 +189,10 @@ final class WeatherViewModel: ObservableObject {
         return "\(temperature)\u{00B0}"
     }
 
-    var conditionSymbol: String {
-        snapshot.condition.symbol
-    }
-
     var conditionIconName: String {
         snapshot.condition.iconName
     }
 
-    var menuBarTitle: String {
-        "\(conditionSymbol) \(temperatureText)"
-    }
 
     func refreshWeather() async {
         let attemptDelays = [Duration.zero] + retryDelays

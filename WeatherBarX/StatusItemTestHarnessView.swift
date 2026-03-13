@@ -39,9 +39,16 @@ struct StatusItemTestHarnessView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Button(viewModel.menuBarTitle) {
+            Button(action: {
                 viewModel.toggleMenuPresentation()
-            }
+            }, label: {
+                HStack(spacing: 4) {
+                    Image(systemName: viewModel.isLoading ? "arrow.triangle.2.circlepath" : viewModel.conditionIconName)
+                    if !viewModel.isLoading {
+                        Text(viewModel.temperatureText)
+                    }
+                }
+            })
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("status-item-button")
 

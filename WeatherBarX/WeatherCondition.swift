@@ -32,33 +32,6 @@ enum WeatherCondition: String, Equatable {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .placeholder:
-            return "☀️"
-        case .networkError:
-            return "wifi.slash"
-        case .apiError:
-            return "cloud.slash"
-        case .clear:
-            return "☀️"
-        case .partlyCloudy:
-            return "⛅️"
-        case .cloudy:
-            return "☁️"
-        case .fog:
-            return "🌫️"
-        case .drizzle:
-            return "🌦️"
-        case .rain:
-            return "🌧️"
-        case .snow:
-            return "❄️"
-        case .thunderstorm:
-            return "⛈️"
-        }
-    }
-
     var iconName: String {
         switch self {
         case .placeholder:
