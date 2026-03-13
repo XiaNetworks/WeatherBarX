@@ -54,7 +54,9 @@ struct StatusItemTestHarnessView: View {
 
             if viewModel.isMenuPresented {
                 VStack(spacing: 12) {
-                    MenuContentView(viewModel: viewModel, onQuit: onQuit)
+                    MenuContentView(viewModel: viewModel, onRefresh: {
+                        viewModel.refreshNow()
+                    }, onQuit: onQuit)
 
                     HarnessQuitButton(onQuit: onQuit)
                         .frame(width: 80, height: 30)

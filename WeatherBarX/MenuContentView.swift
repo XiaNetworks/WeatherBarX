@@ -8,6 +8,7 @@ private enum MenuDetailColors {
 
 struct MenuContentView: View {
     @ObservedObject var viewModel: WeatherViewModel
+    let onRefresh: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
@@ -33,6 +34,8 @@ struct MenuContentView: View {
             }
             .accessibilityIdentifier("temperature-label")
 
+            Divider()
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.highDetailText)
                     .accessibilityIdentifier("high-detail-text")
@@ -53,10 +56,28 @@ struct MenuContentView: View {
             .font(.caption)
             .foregroundColor(MenuDetailColors.detail)
 
-            Text(viewModel.lastCheckText)
-                .font(.caption)
-                .foregroundColor(MenuDetailColors.meta)
-                .accessibilityIdentifier("last-check-text")
+            Divider()
+
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 8) {
+                    Text(viewModel.lastCheckText)
+                        .font(.caption)
+                        .foregroundColor(MenuDetailColors.meta)
+                        .accessibilityIdentifier("last-check-text")
+
+                    Spacer()
+
+                    Button(action: onRefresh) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!viewModel.isRefreshButtonEnabled(at: context.date))
+                    .help("Refresh weather")
+                    .accessibilityIdentifier("refresh-button")
+                }
+            }
 
             Divider()
 

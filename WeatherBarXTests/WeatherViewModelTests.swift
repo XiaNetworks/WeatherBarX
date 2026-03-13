@@ -217,6 +217,36 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
     }
 
+    func testRefreshButtonIsDisabledForOneMinuteAfterLastCheck() async {
+        let clock = MutableNowBox(Date(timeIntervalSince1970: 1_731_447_660))
+        let sleepRecorder = SleepRecorder()
+        let taskBox = TaskBox()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false,
+            retryDelays: [],
+            postErrorRetryDelays: [],
+            successRefreshDelay: { .seconds(600) },
+            now: { clock.current },
+            sleep: { duration in
+                await sleepRecorder.record(duration)
+                taskBox.task?.cancel()
+            }
+        )
+
+        taskBox.task = Task {
+            await viewModel.refreshWeather()
+        }
+        await taskBox.task?.value
+
+        XCTAssertFalse(viewModel.isRefreshButtonEnabled)
+
+        clock.current = clock.current.addingTimeInterval(60)
+        XCTAssertTrue(viewModel.isRefreshButtonEnabled)
+    }
+
     func testLastCheckTextFormatsUsingRecordedCheckTime() async {
         let fixedDate = Date(timeIntervalSince1970: 1_731_447_600)
         let formatter = DateFormatter()
@@ -248,7 +278,8 @@ final class WeatherViewModelTests: XCTestCase {
 
         let recordedSleeps = await sleepRecorder.values
         XCTAssertEqual(recordedSleeps, [.seconds(600)])
-        XCTAssertEqual(viewModel.formatLastCheckText(using: formatter), "Last checked: \(formatter.string(from: fixedDate))")
+        XCTAssertEqual(viewModel.formatLastCheckText(referenceDate: fixedDate.addingTimeInterval(30), using: formatter), "Last checked: <1 min ago")
+        XCTAssertEqual(viewModel.formatLastCheckText(referenceDate: fixedDate.addingTimeInterval(90), using: formatter), "Last checked: \(formatter.string(from: fixedDate))")
         XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: --")
         XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: --")
     }
@@ -574,6 +605,14 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
 
 private final class TaskBox: @unchecked Sendable {
     var task: Task<Void, Never>?
+}
+
+private final class MutableNowBox: @unchecked Sendable {
+    var current: Date
+
+    init(_ current: Date) {
+        self.current = current
+    }
 }
 
 private actor SleepRecorder {

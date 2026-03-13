@@ -65,7 +65,7 @@ struct WeatherBarXApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContentView(viewModel: viewModel, onQuit: quit)
+            MenuContentView(viewModel: viewModel, onRefresh: refresh, onQuit: quit)
         } label: {
             Group {
                 if viewModel.isLoading {
@@ -80,6 +80,10 @@ struct WeatherBarXApp: App {
             .accessibilityIdentifier("status-item-button")
         }
         .menuBarExtraStyle(.window)
+    }
+
+    private func refresh() {
+        viewModel.refreshNow()
     }
 
     private func quit() {

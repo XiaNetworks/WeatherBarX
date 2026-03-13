@@ -366,9 +366,7 @@ final class WeatherViewModel: ObservableObject {
         self.sleep = sleep
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
-            refreshTask = Task { [weak self] in
-                await self?.refreshWeather()
-            }
+            startRefreshLoop(showLoadingState: false)
         }
     }
 
@@ -433,7 +431,23 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var lastCheckText: String {
-        formatLastCheckText()
+        formatLastCheckText(referenceDate: now())
+    }
+
+    var isRefreshButtonEnabled: Bool {
+        isRefreshButtonEnabled(at: now())
+    }
+
+    func isRefreshButtonEnabled(at referenceDate: Date) -> Bool {
+        guard !isLoading else {
+            return false
+        }
+
+        guard let lastCheckAt else {
+            return true
+        }
+
+        return referenceDate.timeIntervalSince(lastCheckAt) >= 60
     }
 
     func refreshWeather() async {
@@ -452,13 +466,26 @@ final class WeatherViewModel: ObservableObject {
         }
     }
 
+    func refreshNow() {
+        guard isRefreshButtonEnabled else {
+            return
+        }
+
+        startRefreshLoop(showLoadingState: true)
+    }
+
     func toggleMenuPresentation() {
         isMenuPresented.toggle()
     }
 
-    func formatLastCheckText(using formatter: DateFormatter? = nil) -> String {
+    func formatLastCheckText(referenceDate: Date? = nil, using formatter: DateFormatter? = nil) -> String {
         guard let lastCheckAt else {
             return "Last checked: --"
+        }
+
+        let referenceDate = referenceDate ?? now()
+        if referenceDate.timeIntervalSince(lastCheckAt) < 60 {
+            return "Last checked: <1 min ago"
         }
 
         let formatter = formatter ?? Self.timeFormatter
@@ -471,6 +498,18 @@ final class WeatherViewModel: ObservableObject {
 
     func formatSunsetText(using formatter: DateFormatter? = nil) -> String {
         "Sunset: \(formatTime(snapshot.sunset, using: formatter))"
+    }
+
+    private func startRefreshLoop(showLoadingState: Bool) {
+        refreshTask?.cancel()
+
+        if showLoadingState {
+            isLoading = true
+        }
+
+        refreshTask = Task { [weak self] in
+            await self?.refreshWeather()
+        }
     }
 
     private func runRefreshCycle() async -> Bool {
