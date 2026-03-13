@@ -212,6 +212,53 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(settings.selectedLocationIndex, 0)
     }
 
+    func testDetectCurrentLocationReturnsProviderLocation() async throws {
+        let detectedLocation = SavedLocation(name: "Cupertino, CA", latitude: 37.3318, longitude: -122.0312)
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            deviceLocationProvider: MockDeviceLocationProvider(result: .success(detectedLocation)),
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        let location = try await viewModel.detectCurrentLocation()
+
+        XCTAssertEqual(location, detectedLocation)
+    }
+
+    func testSearchLocationReturnsProviderLocation() async throws {
+        let searchedLocation = SavedLocation(name: "San Francisco, CA", latitude: 37.7749, longitude: -122.4194)
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            searchLocationProvider: MockSearchLocationProvider(result: .success(searchedLocation)),
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        let location = try await viewModel.searchLocation(query: "94103")
+
+        XCTAssertEqual(location, searchedLocation)
+    }
+
+    func testDetectedLocationCanBeSavedIntoSlot() throws {
+        let defaults = makeDefaults()
+        let detectedLocation = SavedLocation(name: "Cupertino, CA", latitude: 37.3318, longitude: -122.0312)
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        try viewModel.addDetectedLocation(detectedLocation, at: 1)
+
+        XCTAssertEqual(viewModel.locationName, "Cupertino, CA")
+        XCTAssertEqual(viewModel.savedLocations[1], detectedLocation)
+        XCTAssertEqual(WeatherSettings(defaults: defaults).savedLocations[1], detectedLocation)
+    }
+
     func testAddingLocationToEmptySlotPersistsAndSelectsIt() throws {
         let defaults = makeDefaults()
         let viewModel = WeatherViewModel(
@@ -763,6 +810,32 @@ private actor GatedWeatherService: WeatherServing {
 private struct MockWeatherService: WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
         .placeholder
+    }
+}
+
+private struct MockDeviceLocationProvider: DeviceLocationProviding {
+    let result: Result<SavedLocation, Error>
+
+    func detectLocation() async throws -> SavedLocation {
+        switch result {
+        case .success(let location):
+            return location
+        case .failure(let error):
+            throw error
+        }
+    }
+}
+
+private struct MockSearchLocationProvider: SearchLocationProviding {
+    let result: Result<SavedLocation, Error>
+
+    func searchLocation(query: String) async throws -> SavedLocation {
+        switch result {
+        case .success(let location):
+            return location
+        case .failure(let error):
+            throw error
+        }
     }
 }
 

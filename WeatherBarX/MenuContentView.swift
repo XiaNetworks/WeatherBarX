@@ -7,6 +7,25 @@ private enum MenuDetailColors {
     static let iconColumnWidth: CGFloat = 20
 }
 
+private enum AddLocationMode: String, CaseIterable, Identifiable {
+    case manual
+    case detect
+    case search
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .manual:
+            return "Manual"
+        case .detect:
+            return "Detect"
+        case .search:
+            return "Search"
+        }
+    }
+}
+
 private struct DetailRow: View {
     let iconName: String
     let text: String
@@ -26,29 +45,46 @@ private struct DetailRow: View {
 }
 
 private struct AddLocationEditorView: View {
+    @Binding var mode: AddLocationMode
     @Binding var locationName: String
     @Binding var latitudeText: String
     @Binding var longitudeText: String
+    @Binding var searchQuery: String
+    let detectedLocation: SavedLocation?
+    let searchedLocation: SavedLocation?
+    let isDetectingLocation: Bool
+    let isSearchingLocation: Bool
     let errorMessage: String?
     let onCancel: () -> Void
-    let onSave: () -> Void
+    let onManualSave: () -> Void
+    let onDetect: () -> Void
+    let onDetectedSave: () -> Void
+    let onSearch: () -> Void
+    let onSearchedSave: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Add Location")
                 .font(.subheadline.weight(.semibold))
 
-            TextField("Location name", text: $locationName)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("add-location-name-field")
+            Picker("Add Location Mode", selection: $mode) {
+                ForEach(AddLocationMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("add-location-mode-picker")
 
-            TextField("Latitude", text: $latitudeText)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("add-location-latitude-field")
-
-            TextField("Longitude", text: $longitudeText)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("add-location-longitude-field")
+            Group {
+                switch mode {
+                case .manual:
+                    manualContent
+                case .detect:
+                    detectContent
+                case .search:
+                    searchContent
+                }
+            }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -64,10 +100,25 @@ private struct AddLocationEditorView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("add-location-cancel-button")
 
-                Button("Save", action: onSave)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("add-location-save-button")
+                switch mode {
+                case .manual:
+                    Button("Save", action: onManualSave)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("add-location-save-button")
+                case .detect:
+                    Button("Use Detected", action: onDetectedSave)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(detectedLocation == nil || isDetectingLocation)
+                        .accessibilityIdentifier("add-detected-location-button")
+                case .search:
+                    Button("Use Search Result", action: onSearchedSave)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(searchedLocation == nil || isSearchingLocation)
+                        .accessibilityIdentifier("add-searched-location-button")
+                }
             }
         }
         .padding(12)
@@ -78,6 +129,106 @@ private struct AddLocationEditorView: View {
                 .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
         )
     }
+
+    private var manualContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Location name", text: $locationName)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-name-field")
+
+            TextField("Latitude", text: $latitudeText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-latitude-field")
+
+            TextField("Longitude", text: $longitudeText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-longitude-field")
+        }
+    }
+
+    private var detectContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onDetect) {
+                HStack(spacing: 8) {
+                    if isDetectingLocation {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "location.fill")
+                    }
+                    Text(isDetectingLocation ? "Detecting..." : "Detect Current Location")
+                    Spacer()
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isDetectingLocation)
+            .accessibilityIdentifier("detect-current-location-button")
+
+            Group {
+                if let detectedLocation {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(detectedLocation.name)
+                            .font(.subheadline.weight(.medium))
+                            .accessibilityIdentifier("detected-location-name")
+                        Text(String(format: "%.4f, %.4f", detectedLocation.latitude, detectedLocation.longitude))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("detected-location-coordinates")
+                    }
+                } else {
+                    Text("Use your Mac's current location to fill this slot automatically.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var searchContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("ZIP code or city name", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("search-location-query-field")
+
+            Button(action: onSearch) {
+                HStack(spacing: 8) {
+                    if isSearchingLocation {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    Text(isSearchingLocation ? "Searching..." : "Search")
+                    Spacer()
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isSearchingLocation)
+            .accessibilityIdentifier("search-location-button")
+
+            Group {
+                if let searchedLocation {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(searchedLocation.name)
+                            .font(.subheadline.weight(.medium))
+                            .accessibilityIdentifier("searched-location-name")
+                        Text(String(format: "%.4f, %.4f", searchedLocation.latitude, searchedLocation.longitude))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("searched-location-coordinates")
+                    }
+                } else {
+                    Text("Search by ZIP code or city name and save the best match into this slot.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 }
 
 struct MenuContentView: View {
@@ -87,9 +238,15 @@ struct MenuContentView: View {
 
     @State private var isShowingLocationOptions = false
     @State private var editingLocationSlotIndex: Int?
+    @State private var addLocationMode: AddLocationMode = .manual
     @State private var draftLocationName = ""
     @State private var draftLatitude = ""
     @State private var draftLongitude = ""
+    @State private var searchQuery = ""
+    @State private var detectedLocation: SavedLocation?
+    @State private var searchedLocation: SavedLocation?
+    @State private var isDetectingLocation = false
+    @State private var isSearchingLocation = false
     @State private var addLocationError: String?
 
     var body: some View {
@@ -157,12 +314,22 @@ struct MenuContentView: View {
 
                         if editingLocationSlotIndex != nil {
                             AddLocationEditorView(
+                                mode: $addLocationMode,
                                 locationName: $draftLocationName,
                                 latitudeText: $draftLatitude,
                                 longitudeText: $draftLongitude,
+                                searchQuery: $searchQuery,
+                                detectedLocation: detectedLocation,
+                                searchedLocation: searchedLocation,
+                                isDetectingLocation: isDetectingLocation,
+                                isSearchingLocation: isSearchingLocation,
                                 errorMessage: addLocationError,
                                 onCancel: dismissAddLocationEditor,
-                                onSave: submitLocation
+                                onManualSave: submitManualLocation,
+                                onDetect: detectCurrentLocation,
+                                onDetectedSave: submitDetectedLocation,
+                                onSearch: searchForLocation,
+                                onSearchedSave: submitSearchedLocation
                             )
                             .accessibilityIdentifier("add-location-editor")
                         }
@@ -287,7 +454,13 @@ struct MenuContentView: View {
             draftLocationName = ""
             draftLatitude = ""
             draftLongitude = ""
+            searchQuery = ""
+            detectedLocation = nil
+            searchedLocation = nil
+            addLocationMode = .manual
             addLocationError = nil
+            isDetectingLocation = false
+            isSearchingLocation = false
             editingLocationSlotIndex = slot.index
         } else {
             viewModel.selectLocation(at: slot.index)
@@ -299,9 +472,15 @@ struct MenuContentView: View {
     private func dismissAddLocationEditor() {
         editingLocationSlotIndex = nil
         addLocationError = nil
+        searchQuery = ""
+        detectedLocation = nil
+        searchedLocation = nil
+        isDetectingLocation = false
+        isSearchingLocation = false
+        addLocationMode = .manual
     }
 
-    private func submitLocation() {
+    private func submitManualLocation() {
         guard let slotIndex = editingLocationSlotIndex else {
             return
         }
@@ -313,6 +492,100 @@ struct MenuContentView: View {
                 latitudeText: draftLatitude,
                 longitudeText: draftLongitude
             )
+            isShowingLocationOptions = false
+            dismissAddLocationEditor()
+        } catch let error as LocationInputError {
+            addLocationError = error.errorDescription
+        } catch {
+            addLocationError = "Unable to save location."
+        }
+    }
+
+    private func detectCurrentLocation() {
+        guard !isDetectingLocation else {
+            return
+        }
+
+        addLocationMode = .detect
+        isDetectingLocation = true
+        addLocationError = nil
+        detectedLocation = nil
+
+        Task {
+            do {
+                let location = try await viewModel.detectCurrentLocation()
+                await MainActor.run {
+                    detectedLocation = location
+                    isDetectingLocation = false
+                }
+            } catch let error as LocationInputError {
+                await MainActor.run {
+                    addLocationError = error.errorDescription
+                    isDetectingLocation = false
+                }
+            } catch {
+                await MainActor.run {
+                    addLocationError = "Unable to determine your current location."
+                    isDetectingLocation = false
+                }
+            }
+        }
+    }
+
+    private func searchForLocation() {
+        guard !isSearchingLocation else {
+            return
+        }
+
+        addLocationMode = .search
+        isSearchingLocation = true
+        addLocationError = nil
+        searchedLocation = nil
+
+        Task {
+            do {
+                let location = try await viewModel.searchLocation(query: searchQuery)
+                await MainActor.run {
+                    searchedLocation = location
+                    isSearchingLocation = false
+                }
+            } catch let error as LocationInputError {
+                await MainActor.run {
+                    addLocationError = error.errorDescription
+                    isSearchingLocation = false
+                }
+            } catch {
+                await MainActor.run {
+                    addLocationError = "Unable to find that location."
+                    isSearchingLocation = false
+                }
+            }
+        }
+    }
+
+    private func submitSearchedLocation() {
+        guard let slotIndex = editingLocationSlotIndex, let searchedLocation else {
+            return
+        }
+
+        do {
+            try viewModel.addDetectedLocation(searchedLocation, at: slotIndex)
+            isShowingLocationOptions = false
+            dismissAddLocationEditor()
+        } catch let error as LocationInputError {
+            addLocationError = error.errorDescription
+        } catch {
+            addLocationError = "Unable to save location."
+        }
+    }
+
+    private func submitDetectedLocation() {
+        guard let slotIndex = editingLocationSlotIndex, let detectedLocation else {
+            return
+        }
+
+        do {
+            try viewModel.addDetectedLocation(detectedLocation, at: slotIndex)
             isShowingLocationOptions = false
             dismissAddLocationEditor()
         } catch let error as LocationInputError {

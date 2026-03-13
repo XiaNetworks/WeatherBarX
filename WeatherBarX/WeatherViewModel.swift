@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import ServiceManagement
 
@@ -60,6 +61,14 @@ protocol WeatherServing {
 protocol LaunchAtLoginManaging {
     var isEnabled: Bool { get }
     func setEnabled(_ enabled: Bool) throws
+}
+
+protocol DeviceLocationProviding {
+    func detectLocation() async throws -> SavedLocation
+}
+
+protocol SearchLocationProviding {
+    func searchLocation(query: String) async throws -> SavedLocation
 }
 
 enum WeatherServiceError: Error, Equatable {
@@ -371,6 +380,7 @@ enum LocationInputError: LocalizedError, Equatable {
     case invalidLatitude
     case invalidLongitude
     case invalidSlot
+    case detectionFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -382,7 +392,101 @@ enum LocationInputError: LocalizedError, Equatable {
             return "Enter a longitude between -180 and 180."
         case .invalidSlot:
             return "Unable to save this location slot."
+        case .detectionFailed(let message):
+            return message
         }
+    }
+}
+
+private struct GeocodedSearchLocationProvider: SearchLocationProviding {
+    private let geocoder = CLGeocoder()
+
+    func searchLocation(query: String) async throws -> SavedLocation {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            throw LocationInputError.detectionFailed("Enter a ZIP code or city name to search.")
+        }
+
+        let placemarks = try await geocoder.geocodeAddressString(trimmedQuery)
+        guard let placemark = placemarks.first, let location = placemark.location else {
+            throw LocationInputError.detectionFailed("No matching location was found.")
+        }
+
+        let name = CurrentDeviceLocationProvider.locationName(from: placemark, coordinate: location.coordinate)
+        return SavedLocation(name: name, latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+    }
+}
+
+private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProviding, CLLocationManagerDelegate {
+    private let locationManager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+    private var continuation: CheckedContinuation<CLLocation, Error>?
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+    }
+
+    func detectLocation() async throws -> SavedLocation {
+        let location = try await requestLocation()
+        let placemarks = try await geocoder.reverseGeocodeLocation(location)
+        let name = Self.locationName(from: placemarks.first, coordinate: location.coordinate)
+
+        return SavedLocation(
+            name: name,
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude
+        )
+    }
+
+    private func requestLocation() async throws -> CLLocation {
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .restricted, .denied:
+            throw LocationInputError.detectionFailed("Allow location access in System Settings to detect your current location.")
+        default:
+            break
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            self.locationManager.requestLocation()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.first else {
+            continuation?.resume(throwing: LocationInputError.detectionFailed("Unable to determine your current location."))
+            continuation = nil
+            return
+        }
+
+        continuation?.resume(returning: location)
+        continuation = nil
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        continuation?.resume(throwing: LocationInputError.detectionFailed("Unable to determine your current location."))
+        continuation = nil
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            continuation?.resume(throwing: LocationInputError.detectionFailed("Allow location access in System Settings to detect your current location."))
+            continuation = nil
+        }
+    }
+
+    static func locationName(from placemark: CLPlacemark?, coordinate: CLLocationCoordinate2D) -> String {
+        let parts = [placemark?.locality, placemark?.administrativeArea].compactMap { $0 }.filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return parts.joined(separator: ", ")
+        }
+        if let name = placemark?.name, !name.isEmpty {
+            return name
+        }
+        return String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)
     }
 }
 
@@ -400,6 +504,8 @@ final class WeatherViewModel: ObservableObject {
     let settings: WeatherSettings
     private let defaults: UserDefaults
     private let launchAtLoginManager: any LaunchAtLoginManaging
+    private let deviceLocationProvider: any DeviceLocationProviding
+    private let searchLocationProvider: any SearchLocationProviding
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
     private let postErrorRetryDelays: [Duration]
@@ -412,6 +518,8 @@ final class WeatherViewModel: ObservableObject {
         defaults: UserDefaults = .standard,
         snapshot: WeatherSnapshot? = nil,
         launchAtLoginManager: any LaunchAtLoginManaging = LaunchAtLoginManager(),
+        deviceLocationProvider: any DeviceLocationProviding = CurrentDeviceLocationProvider(),
+        searchLocationProvider: any SearchLocationProviding = GeocodedSearchLocationProvider(),
         weatherService: WeatherServing = OpenMeteoWeatherService(),
         refreshOnInit: Bool = true,
         retryDelays: [Duration] = [.seconds(10), .seconds(20), .seconds(30)],
@@ -434,6 +542,8 @@ final class WeatherViewModel: ObservableObject {
         self.savedLocations = settings.savedLocations
         self.selectedLocationIndex = settings.selectedLocationIndex
         self.launchAtLoginManager = launchAtLoginManager
+        self.deviceLocationProvider = deviceLocationProvider
+        self.searchLocationProvider = searchLocationProvider
         self.weatherService = weatherService
         self.retryDelays = retryDelays
         self.postErrorRetryDelays = postErrorRetryDelays
@@ -646,10 +756,23 @@ final class WeatherViewModel: ObservableObject {
             throw LocationInputError.invalidLongitude
         }
 
-        savedLocations[index] = SavedLocation(name: trimmedName, latitude: latitude, longitude: longitude)
-        selectedLocationIndex = index
-        persistLocationState()
-        resetForLocationChange()
+        saveLocation(SavedLocation(name: trimmedName, latitude: latitude, longitude: longitude), at: index)
+    }
+
+    func detectCurrentLocation() async throws -> SavedLocation {
+        try await deviceLocationProvider.detectLocation()
+    }
+
+    func searchLocation(query: String) async throws -> SavedLocation {
+        try await searchLocationProvider.searchLocation(query: query)
+    }
+
+    func addDetectedLocation(_ location: SavedLocation, at index: Int) throws {
+        guard savedLocations.indices.contains(index) else {
+            throw LocationInputError.invalidSlot
+        }
+
+        saveLocation(location, at: index)
     }
 
     func toggleMenuPresentation() {
@@ -691,6 +814,13 @@ final class WeatherViewModel: ObservableObject {
         } else {
             startRefreshLoop(showLoadingState: true)
         }
+    }
+
+    private func saveLocation(_ location: SavedLocation, at index: Int) {
+        savedLocations[index] = location
+        selectedLocationIndex = index
+        persistLocationState()
+        resetForLocationChange()
     }
 
     private func persistLocationState() {
