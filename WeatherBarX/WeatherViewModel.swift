@@ -138,7 +138,7 @@ final class WeatherViewModel: ObservableObject {
     let settings: WeatherSettings
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
-    private let repeatedRetryDelay: Duration?
+    private let postErrorRetryDelays: [Duration]
     private let sleep: @Sendable (Duration) async -> Void
     private var refreshTask: Task<Void, Never>?
 
@@ -148,7 +148,7 @@ final class WeatherViewModel: ObservableObject {
         weatherService: WeatherServing = OpenMeteoWeatherService(),
         refreshOnInit: Bool = true,
         retryDelays: [Duration] = [.seconds(10), .seconds(20), .seconds(30)],
-        repeatedRetryDelay: Duration? = .seconds(300),
+        postErrorRetryDelays: [Duration] = [.seconds(120), .seconds(180), .seconds(300)],
         sleep: @escaping @Sendable (Duration) async -> Void = { duration in
             try? await Task.sleep(for: duration)
         }
@@ -159,7 +159,7 @@ final class WeatherViewModel: ObservableObject {
         self.isLoading = refreshOnInit && !settings.usesPlaceholderWeather
         self.weatherService = weatherService
         self.retryDelays = retryDelays
-        self.repeatedRetryDelay = repeatedRetryDelay
+        self.postErrorRetryDelays = postErrorRetryDelays
         self.sleep = sleep
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
@@ -226,12 +226,34 @@ final class WeatherViewModel: ObservableObject {
             }
         }
 
-        guard let repeatedRetryDelay else {
+        guard !postErrorRetryDelays.isEmpty else {
+            return
+        }
+
+        for delay in postErrorRetryDelays {
+            await sleep(delay)
+
+            if Task.isCancelled {
+                return
+            }
+
+            switch await fetchSnapshot() {
+            case .success(let snapshot):
+                isLoading = false
+                self.snapshot = snapshot
+                return
+            case .failure(let error):
+                isLoading = false
+                snapshot = snapshotForError(error)
+            }
+        }
+
+        guard let repeatingDelay = postErrorRetryDelays.last else {
             return
         }
 
         while !Task.isCancelled {
-            await sleep(repeatedRetryDelay)
+            await sleep(repeatingDelay)
 
             if Task.isCancelled {
                 return

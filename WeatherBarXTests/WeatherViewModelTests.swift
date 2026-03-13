@@ -45,7 +45,7 @@ final class WeatherViewModelTests: XCTestCase {
             snapshot: .placeholder,
             weatherService: PendingWeatherService(),
             refreshOnInit: true,
-            repeatedRetryDelay: nil
+            postErrorRetryDelays: []
         )
 
         XCTAssertTrue(viewModel.isLoading)
@@ -65,7 +65,7 @@ final class WeatherViewModelTests: XCTestCase {
             weatherService: service,
             refreshOnInit: false,
             retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
-            repeatedRetryDelay: nil,
+            postErrorRetryDelays: [],
             sleep: { duration in
                 recordedSleeps.append(duration)
             }
@@ -93,7 +93,7 @@ final class WeatherViewModelTests: XCTestCase {
             weatherService: service,
             refreshOnInit: false,
             retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
-            repeatedRetryDelay: nil,
+            postErrorRetryDelays: [],
             sleep: { duration in
                 recordedSleeps.append(duration)
             }
@@ -105,6 +105,39 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.conditionIconName, "cloud.slash")
         XCTAssertEqual(viewModel.temperatureText, "--")
         XCTAssertEqual(viewModel.summaryText, "Weather API unavailable")
+    }
+
+    func testPostErrorRetryCadenceUsesTwoThreeAndThenFiveMinutes() async {
+        let service = SequencedWeatherService(results: [
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .success(.placeholder),
+        ])
+        var recordedSleeps: [Duration] = []
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
+            postErrorRetryDelays: [.seconds(120), .seconds(180), .seconds(300)],
+            sleep: { duration in
+                recordedSleeps.append(duration)
+            }
+        )
+
+        await viewModel.refreshWeather()
+
+        XCTAssertEqual(
+            recordedSleeps,
+            [.seconds(10), .seconds(20), .seconds(30), .seconds(120), .seconds(180), .seconds(300), .seconds(300)]
+        )
+        XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
     private func makeDefaults() -> UserDefaults {
