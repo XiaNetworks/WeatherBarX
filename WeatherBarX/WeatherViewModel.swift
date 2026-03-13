@@ -296,11 +296,19 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var summaryText: String {
-        snapshot.summary
+        if isLoading {
+            return "Loading weather..."
+        }
+
+        return snapshot.summary
     }
 
     var temperatureText: String {
-        formatTemperature(snapshot.temperature)
+        if isLoading {
+            return "--"
+        }
+
+        return formatTemperature(snapshot.temperature)
     }
 
     var conditionIconName: String {
@@ -308,17 +316,29 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var dailyRangeText: String {
+        if isLoading {
+            return "H: --  L: --"
+        }
+
         let high = formatTemperature(snapshot.highTemperature)
         let low = formatTemperature(snapshot.lowTemperature)
         return "H: \(high)  L: \(low)"
     }
 
     var sunriseText: String {
-        formatSunriseText()
+        if isLoading {
+            return "Sunrise: --"
+        }
+
+        return formatSunriseText()
     }
 
     var sunsetText: String {
-        formatSunsetText()
+        if isLoading {
+            return "Sunset: --"
+        }
+
+        return formatSunsetText()
     }
 
     var lastCheckText: String {

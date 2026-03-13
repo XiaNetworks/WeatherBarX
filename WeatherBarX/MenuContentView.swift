@@ -20,8 +20,18 @@ struct MenuContentView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("weather-summary-text")
 
-            Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
-                .accessibilityIdentifier("temperature-label")
+            Group {
+                if viewModel.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading")
+                    }
+                } else {
+                    Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
+                }
+            }
+            .accessibilityIdentifier("temperature-label")
 
             Text(viewModel.dailyRangeText)
                 .font(.subheadline)

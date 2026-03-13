@@ -303,6 +303,22 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.isLoading)
     }
 
+    func testLoadingStateDoesNotExposePlaceholderValues() {
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: PendingWeatherService(),
+            refreshOnInit: true,
+            postErrorRetryDelays: []
+        )
+
+        XCTAssertEqual(viewModel.summaryText, "Loading weather...")
+        XCTAssertEqual(viewModel.temperatureText, "--")
+        XCTAssertEqual(viewModel.dailyRangeText, "H: --  L: --")
+        XCTAssertEqual(viewModel.sunriseText, "Sunrise: --")
+        XCTAssertEqual(viewModel.sunsetText, "Sunset: --")
+    }
+
     func testRefreshUpdatesViewModelStateFromLoadingToSuccess() async {
         let updatedSnapshot = WeatherSnapshot(
             summary: "Clear sky",
