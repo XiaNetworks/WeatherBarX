@@ -8,9 +8,9 @@ private enum MenuDetailColors {
 }
 
 private enum AddLocationMode: String, CaseIterable, Identifiable {
-    case manual
-    case detect
     case search
+    case detect
+    case manual
 
     var id: String { rawValue }
 
@@ -64,14 +64,12 @@ private struct AddLocationEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Add Location")
-                .font(.subheadline.weight(.semibold))
-
             Picker("Add Location Mode", selection: $mode) {
                 ForEach(AddLocationMode.allCases) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
+            .labelsHidden()
             .pickerStyle(.segmented)
             .accessibilityIdentifier("add-location-mode-picker")
 
@@ -238,7 +236,7 @@ struct MenuContentView: View {
 
     @State private var isShowingLocationOptions = false
     @State private var editingLocationSlotIndex: Int?
-    @State private var addLocationMode: AddLocationMode = .manual
+    @State private var addLocationMode: AddLocationMode = .search
     @State private var draftLocationName = ""
     @State private var draftLatitude = ""
     @State private var draftLongitude = ""
@@ -457,7 +455,7 @@ struct MenuContentView: View {
             searchQuery = ""
             detectedLocation = nil
             searchedLocation = nil
-            addLocationMode = .manual
+            addLocationMode = .search
             addLocationError = nil
             isDetectingLocation = false
             isSearchingLocation = false
@@ -477,7 +475,7 @@ struct MenuContentView: View {
         searchedLocation = nil
         isDetectingLocation = false
         isSearchingLocation = false
-        addLocationMode = .manual
+        addLocationMode = .search
     }
 
     private func submitManualLocation() {
