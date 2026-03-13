@@ -1,6 +1,34 @@
 import XCTest
 @testable import WeatherBarX
 
+private func sampleResponse(
+    temperature: Double,
+    weatherCode: Int,
+    currentTime: String,
+    sunrise: [String],
+    sunset: [String],
+    timezone: String = "America/New_York"
+) -> Data {
+    let sunriseJSON = sunrise.map { "\"\($0)\"" }.joined(separator: ",")
+    let sunsetJSON = sunset.map { "\"\($0)\"" }.joined(separator: ",")
+    let json = """
+    {
+      "timezone": "\(timezone)",
+      "current": {
+        "time": "\(currentTime)",
+        "temperature_2m": \(temperature),
+        "weather_code": \(weatherCode)
+      },
+      "daily": {
+        "sunrise": [\(sunriseJSON)],
+        "sunset": [\(sunsetJSON)]
+      }
+    }
+    """
+
+    return Data(json.utf8)
+}
+
 @MainActor
 final class WeatherViewModelTests: XCTestCase {
     func testJSONResponseDecodesIntoWeatherModelCorrectly() throws {
@@ -55,6 +83,67 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertFalse(snapshot.isDaylight)
         XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "cloud.moon.fill")
+    }
+
+    func testWeatherServiceReturnsParsedDomainModelFromSamplePayload() async throws {
+        URLProtocolStub.responseProvider = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.open-meteo.com/v1/forecast")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (.success((response, sampleResponse(
+                temperature: 70.6,
+                weatherCode: 61,
+                currentTime: "2026-03-12T09:30",
+                sunrise: ["2026-03-12T07:15"],
+                sunset: ["2026-03-12T19:05"]
+            ))))
+        }
+
+        let snapshot = try await makeWeatherService().fetchCurrentWeather(latitude: 38.9072, longitude: -77.0369)
+
+        XCTAssertEqual(snapshot.temperature, 71)
+        XCTAssertEqual(snapshot.condition, .rain)
+        XCTAssertEqual(snapshot.summary, "Rain")
+        XCTAssertTrue(snapshot.isDaylight)
+    }
+
+    func testWeatherServiceReturnsNetworkUnavailableOnTimeout() async {
+        URLProtocolStub.responseProvider = { _ in
+            .failure(URLError(.timedOut))
+        }
+
+        await XCTAssertThrowsErrorAsync(try await makeWeatherService().fetchCurrentWeather(latitude: 38.9072, longitude: -77.0369)) { error in
+            XCTAssertEqual(error as? WeatherServiceError, .networkUnavailable)
+        }
+    }
+
+    func testWeatherServiceReturnsNetworkUnavailableWhenOffline() async {
+        URLProtocolStub.responseProvider = { _ in
+            .failure(URLError(.notConnectedToInternet))
+        }
+
+        await XCTAssertThrowsErrorAsync(try await makeWeatherService().fetchCurrentWeather(latitude: 38.9072, longitude: -77.0369)) { error in
+            XCTAssertEqual(error as? WeatherServiceError, .networkUnavailable)
+        }
+    }
+
+    func testWeatherServiceReturnsRequestFailedForBadHTTPStatus() async {
+        URLProtocolStub.responseProvider = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.open-meteo.com/v1/forecast")!,
+                statusCode: 500,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return .success((response, Data()))
+        }
+
+        await XCTAssertThrowsErrorAsync(try await makeWeatherService().fetchCurrentWeather(latitude: 38.9072, longitude: -77.0369)) { error in
+            XCTAssertEqual(error as? WeatherServiceError, .requestFailed)
+        }
     }
 
     func testTemperatureConversionLogicIsCorrect() {
@@ -231,6 +320,55 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.isLoading)
     }
 
+    func testRefreshUpdatesViewModelStateFromLoadingToSuccess() async {
+        let updatedSnapshot = WeatherSnapshot(
+            summary: "Clear sky",
+            temperature: 66,
+            condition: .clear,
+            isDaylight: true
+        )
+        let service = GatedWeatherService()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: true,
+            retryDelays: [],
+            postErrorRetryDelays: [],
+            successRefreshDelay: { .seconds(600) }
+        )
+
+        XCTAssertTrue(viewModel.isLoading)
+
+        await service.resume(with: .success(updatedSnapshot))
+        await waitUntil { !viewModel.isLoading }
+
+        XCTAssertEqual(viewModel.temperatureText, "66°")
+        XCTAssertEqual(viewModel.summaryText, "Clear sky")
+        XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
+    }
+
+    func testRefreshUpdatesViewModelStateFromLoadingToError() async {
+        let service = GatedWeatherService()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: true,
+            retryDelays: [],
+            postErrorRetryDelays: []
+        )
+
+        XCTAssertTrue(viewModel.isLoading)
+
+        await service.resume(with: .failure(.networkUnavailable))
+        await waitUntil { !viewModel.isLoading }
+
+        XCTAssertEqual(viewModel.temperatureText, "--")
+        XCTAssertEqual(viewModel.summaryText, "Network unavailable")
+        XCTAssertEqual(viewModel.conditionIconName, "wifi.slash")
+    }
+
     func testSuccessfulRefreshSchedulesRandomDelayBetweenCycles() async {
         let updatedSnapshot = WeatherSnapshot(
             summary: "Clear sky",
@@ -339,6 +477,17 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
+    private func makeWeatherService() -> OpenMeteoWeatherService {
+        addTeardownBlock {
+            URLProtocolStub.reset()
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        return OpenMeteoWeatherService(session: session)
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "\(name)-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -358,32 +507,39 @@ final class WeatherViewModelTests: XCTestCase {
         )
     }
 
-    private func sampleResponse(
-        temperature: Double,
-        weatherCode: Int,
-        currentTime: String,
-        sunrise: [String],
-        sunset: [String],
-        timezone: String = "America/New_York"
-    ) -> Data {
-        let sunriseJSON = sunrise.map { "\"\($0)\"" }.joined(separator: ",")
-        let sunsetJSON = sunset.map { "\"\($0)\"" }.joined(separator: ",")
-        let json = """
-        {
-          "timezone": "\(timezone)",
-          "current": {
-            "time": "\(currentTime)",
-            "temperature_2m": \(temperature),
-            "weather_code": \(weatherCode)
-          },
-          "daily": {
-            "sunrise": [\(sunriseJSON)],
-            "sunset": [\(sunsetJSON)]
-          }
-        }
-        """
+}
 
-        return Data(json.utf8)
+private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
+    static var responseProvider: (@Sendable (URLRequest) -> Result<(HTTPURLResponse, Data), Error>)?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let responseProvider = Self.responseProvider else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        switch responseProvider(request) {
+        case .success(let (response, data)):
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+
+    static func reset() {
+        responseProvider = nil
     }
 }
 
@@ -400,6 +556,32 @@ private actor SleepRecorder {
 
     var values: [Duration] {
         durations
+    }
+}
+
+private actor GatedWeatherService: WeatherServing {
+    private var continuation: CheckedContinuation<Result<WeatherSnapshot, WeatherServiceError>, Never>?
+
+    func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        let result = await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+
+        switch result {
+        case .success(let snapshot):
+            return snapshot
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func resume(with result: Result<WeatherSnapshot, WeatherServiceError>) async {
+        while continuation == nil {
+            await Task.yield()
+        }
+
+        continuation?.resume(returning: result)
+        continuation = nil
     }
 }
 
@@ -437,3 +619,35 @@ private final class SequencedWeatherService: WeatherServing {
         }
     }
 }
+
+private func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure () async throws -> T,
+    _ errorHandler: (Error) -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected error to be thrown", file: file, line: line)
+    } catch {
+        errorHandler(error)
+    }
+}
+
+@MainActor
+private func waitUntil(
+    timeoutNanoseconds: UInt64 = 1_000_000_000,
+    condition: () -> Bool
+) async {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+
+    while !condition() {
+        if DispatchTime.now().uptimeNanoseconds > deadline {
+            XCTFail("Timed out waiting for condition")
+            return
+        }
+
+        await Task.yield()
+    }
+}
+
