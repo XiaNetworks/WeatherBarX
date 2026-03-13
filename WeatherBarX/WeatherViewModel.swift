@@ -57,9 +57,18 @@ enum WeatherServiceError: Error, Equatable {
 }
 
 struct OpenMeteoWeatherService: WeatherServing {
+    private static let requestTimeout: TimeInterval = 10
+    private static let resourceTimeout: TimeInterval = 15
+    private static let liveSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = requestTimeout
+        configuration.timeoutIntervalForResource = resourceTimeout
+        return URLSession(configuration: configuration)
+    }()
+
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = liveSession) {
         self.session = session
     }
 
@@ -80,7 +89,7 @@ struct OpenMeteoWeatherService: WeatherServing {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,weather_code,time"),
+            URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
             URLQueryItem(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min"),
             URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
@@ -91,7 +100,10 @@ struct OpenMeteoWeatherService: WeatherServing {
             throw WeatherServiceError.invalidRequest
         }
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Self.requestTimeout
+
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WeatherServiceError.invalidResponse
         }
