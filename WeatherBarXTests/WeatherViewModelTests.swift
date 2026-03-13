@@ -162,6 +162,40 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
     }
 
+    func testLastCheckTextFormatsUsingRecordedCheckTime() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_731_447_600)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "HH:mm"
+
+        let sleepRecorder = SleepRecorder()
+        let taskBox = TaskBox()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false,
+            retryDelays: [],
+            postErrorRetryDelays: [],
+            successRefreshDelay: { .seconds(600) },
+            now: { fixedDate },
+            sleep: { duration in
+                await sleepRecorder.record(duration)
+                taskBox.task?.cancel()
+            }
+        )
+
+        taskBox.task = Task {
+            await viewModel.refreshWeather()
+        }
+        await taskBox.task?.value
+
+        let recordedSleeps = await sleepRecorder.values
+        XCTAssertEqual(recordedSleeps, [.seconds(600)])
+        XCTAssertEqual(viewModel.formatLastCheckText(using: formatter), "Last checked: \(formatter.string(from: fixedDate))")
+    }
+
     func testSettingsDefaultsLoadCorrectly() {
         let defaults = makeDefaults()
 
@@ -275,6 +309,7 @@ final class WeatherViewModelTests: XCTestCase {
             .success(.placeholder),
         ])
         let sleepRecorder = SleepRecorder()
+        let taskBox = TaskBox()
         let viewModel = WeatherViewModel(
             defaults: makeDefaults(),
             snapshot: .placeholder,
@@ -282,17 +317,24 @@ final class WeatherViewModelTests: XCTestCase {
             refreshOnInit: false,
             retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
             postErrorRetryDelays: [.seconds(120), .seconds(180), .seconds(300)],
+            successRefreshDelay: { .seconds(600) },
             sleep: { duration in
                 await sleepRecorder.record(duration)
+                if duration == .seconds(600) {
+                    taskBox.task?.cancel()
+                }
             }
         )
 
-        await viewModel.refreshWeather()
+        taskBox.task = Task {
+            await viewModel.refreshWeather()
+        }
+        await taskBox.task?.value
 
         let recordedSleeps = await sleepRecorder.values
         XCTAssertEqual(
             recordedSleeps,
-            [.seconds(10), .seconds(20), .seconds(30), .seconds(120), .seconds(180), .seconds(300), .seconds(300)]
+            [.seconds(10), .seconds(20), .seconds(30), .seconds(120), .seconds(180), .seconds(300), .seconds(300), .seconds(600)]
         )
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }

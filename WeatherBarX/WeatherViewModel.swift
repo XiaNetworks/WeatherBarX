@@ -190,12 +190,14 @@ final class WeatherViewModel: ObservableObject {
     @Published var isMenuPresented = false
     @Published private(set) var isLoading: Bool
     @Published private(set) var snapshot: WeatherSnapshot
+    @Published private(set) var lastCheckAt: Date?
 
     let settings: WeatherSettings
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
     private let postErrorRetryDelays: [Duration]
     private let successRefreshDelay: @Sendable () -> Duration
+    private let now: @Sendable () -> Date
     private let sleep: @Sendable (Duration) async -> Void
     private var refreshTask: Task<Void, Never>?
 
@@ -209,6 +211,7 @@ final class WeatherViewModel: ObservableObject {
         successRefreshDelay: @escaping @Sendable () -> Duration = {
             .seconds(Int.random(in: 600 ... 900))
         },
+        now: @escaping @Sendable () -> Date = { Date() },
         sleep: @escaping @Sendable (Duration) async -> Void = { duration in
             try? await Task.sleep(for: duration)
         }
@@ -221,6 +224,7 @@ final class WeatherViewModel: ObservableObject {
         self.retryDelays = retryDelays
         self.postErrorRetryDelays = postErrorRetryDelays
         self.successRefreshDelay = successRefreshDelay
+        self.now = now
         self.sleep = sleep
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
@@ -254,6 +258,10 @@ final class WeatherViewModel: ObservableObject {
         snapshot.condition.iconName(isDaylight: snapshot.isDaylight)
     }
 
+    var lastCheckText: String {
+        formatLastCheckText()
+    }
+
     func refreshWeather() async {
         while !Task.isCancelled {
             let didSucceed = await runRefreshCycle()
@@ -272,6 +280,15 @@ final class WeatherViewModel: ObservableObject {
 
     func toggleMenuPresentation() {
         isMenuPresented.toggle()
+    }
+
+    func formatLastCheckText(using formatter: DateFormatter? = nil) -> String {
+        guard let lastCheckAt else {
+            return "Last checked: --"
+        }
+
+        let formatter = formatter ?? Self.lastCheckFormatter
+        return "Last checked: \(formatter.string(from: lastCheckAt))"
     }
 
     private func runRefreshCycle() async -> Bool {
@@ -352,10 +369,13 @@ final class WeatherViewModel: ObservableObject {
                 latitude: settings.latitude,
                 longitude: settings.longitude
             )
+            lastCheckAt = now()
             return .success(snapshot)
         } catch let error as WeatherServiceError {
+            lastCheckAt = now()
             return .failure(error)
         } catch {
+            lastCheckAt = now()
             return .failure(.requestFailed)
         }
     }
@@ -368,4 +388,11 @@ final class WeatherViewModel: ObservableObject {
             return .apiUnavailable
         }
     }
+
+    private static let lastCheckFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
 }
