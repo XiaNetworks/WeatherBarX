@@ -4,6 +4,25 @@ import SwiftUI
 private enum MenuDetailColors {
     static let detail = Color(nsColor: NSColor.labelColor)
     static let meta = Color(nsColor: NSColor.secondaryLabelColor)
+    static let iconColumnWidth: CGFloat = 20
+}
+
+private struct DetailRow: View {
+    let iconName: String
+    let text: String
+    let accessibilityIdentifier: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: iconName)
+                .frame(width: MenuDetailColors.iconColumnWidth, alignment: .center)
+
+            Text(text)
+
+            Spacer(minLength: 0)
+        }
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
 }
 
 struct MenuContentView: View {
@@ -37,23 +56,35 @@ struct MenuContentView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.highDetailText)
-                    .accessibilityIdentifier("high-detail-text")
+                DetailRow(
+                    iconName: "thermometer.high",
+                    text: viewModel.highDetailText,
+                    accessibilityIdentifier: "high-detail-text"
+                )
 
-                Text(viewModel.lowDetailText)
-                    .accessibilityIdentifier("low-detail-text")
+                DetailRow(
+                    iconName: "thermometer.low",
+                    text: viewModel.lowDetailText,
+                    accessibilityIdentifier: "low-detail-text"
+                )
             }
             .font(.subheadline)
             .foregroundColor(MenuDetailColors.detail)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.sunriseText)
-                    .accessibilityIdentifier("sunrise-text")
+                DetailRow(
+                    iconName: "sunrise",
+                    text: viewModel.sunriseText,
+                    accessibilityIdentifier: "sunrise-text"
+                )
 
-                Text(viewModel.sunsetText)
-                    .accessibilityIdentifier("sunset-text")
+                DetailRow(
+                    iconName: "sunset.fill",
+                    text: viewModel.sunsetText,
+                    accessibilityIdentifier: "sunset-text"
+                )
             }
-            .font(.caption)
+            .font(.subheadline)
             .foregroundColor(MenuDetailColors.detail)
 
             Divider()
