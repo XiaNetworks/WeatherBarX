@@ -195,6 +195,7 @@ final class WeatherViewModel: ObservableObject {
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
     private let postErrorRetryDelays: [Duration]
+    private let successRefreshDelay: @Sendable () -> Duration
     private let sleep: @Sendable (Duration) async -> Void
     private var refreshTask: Task<Void, Never>?
 
@@ -205,6 +206,9 @@ final class WeatherViewModel: ObservableObject {
         refreshOnInit: Bool = true,
         retryDelays: [Duration] = [.seconds(10), .seconds(20), .seconds(30)],
         postErrorRetryDelays: [Duration] = [.seconds(120), .seconds(180), .seconds(300)],
+        successRefreshDelay: @escaping @Sendable () -> Duration = {
+            .seconds(Int.random(in: 600 ... 900))
+        },
         sleep: @escaping @Sendable (Duration) async -> Void = { duration in
             try? await Task.sleep(for: duration)
         }
@@ -216,6 +220,7 @@ final class WeatherViewModel: ObservableObject {
         self.weatherService = weatherService
         self.retryDelays = retryDelays
         self.postErrorRetryDelays = postErrorRetryDelays
+        self.successRefreshDelay = successRefreshDelay
         self.sleep = sleep
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
@@ -250,6 +255,26 @@ final class WeatherViewModel: ObservableObject {
     }
 
     func refreshWeather() async {
+        while !Task.isCancelled {
+            let didSucceed = await runRefreshCycle()
+            guard didSucceed else {
+                return
+            }
+
+            let delay = successRefreshDelay()
+            await sleep(delay)
+
+            if Task.isCancelled {
+                return
+            }
+        }
+    }
+
+    func toggleMenuPresentation() {
+        isMenuPresented.toggle()
+    }
+
+    private func runRefreshCycle() async -> Bool {
         let attemptDelays = [Duration.zero] + retryDelays
 
         for (index, delay) in attemptDelays.enumerated() {
@@ -258,14 +283,14 @@ final class WeatherViewModel: ObservableObject {
             }
 
             if Task.isCancelled {
-                return
+                return false
             }
 
             switch await fetchSnapshot() {
             case .success(let snapshot):
                 isLoading = false
                 self.snapshot = snapshot
-                return
+                return true
             case .failure(let error):
                 if index == attemptDelays.count - 1 {
                     isLoading = false
@@ -275,21 +300,21 @@ final class WeatherViewModel: ObservableObject {
         }
 
         guard !postErrorRetryDelays.isEmpty else {
-            return
+            return false
         }
 
         for delay in postErrorRetryDelays {
             await sleep(delay)
 
             if Task.isCancelled {
-                return
+                return false
             }
 
             switch await fetchSnapshot() {
             case .success(let snapshot):
                 isLoading = false
                 self.snapshot = snapshot
-                return
+                return true
             case .failure(let error):
                 isLoading = false
                 snapshot = snapshotForError(error)
@@ -297,30 +322,28 @@ final class WeatherViewModel: ObservableObject {
         }
 
         guard let repeatingDelay = postErrorRetryDelays.last else {
-            return
+            return false
         }
 
         while !Task.isCancelled {
             await sleep(repeatingDelay)
 
             if Task.isCancelled {
-                return
+                return false
             }
 
             switch await fetchSnapshot() {
             case .success(let snapshot):
                 isLoading = false
                 self.snapshot = snapshot
-                return
+                return true
             case .failure(let error):
                 isLoading = false
                 snapshot = snapshotForError(error)
             }
         }
-    }
 
-    func toggleMenuPresentation() {
-        isMenuPresented.toggle()
+        return false
     }
 
     private func fetchSnapshot() async -> Result<WeatherSnapshot, WeatherServiceError> {

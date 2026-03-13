@@ -197,6 +197,43 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.isLoading)
     }
 
+    func testSuccessfulRefreshSchedulesRandomDelayBetweenCycles() async {
+        let updatedSnapshot = WeatherSnapshot(
+            summary: "Clear sky",
+            temperature: 66,
+            condition: .clear,
+            isDaylight: true
+        )
+        let service = SequencedWeatherService(results: [
+            .success(updatedSnapshot),
+            .success(.placeholder),
+        ])
+        let sleepRecorder = SleepRecorder()
+        let taskBox = TaskBox()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [],
+            postErrorRetryDelays: [],
+            successRefreshDelay: { .seconds(720) },
+            sleep: { duration in
+                await sleepRecorder.record(duration)
+                taskBox.task?.cancel()
+            }
+        )
+
+        taskBox.task = Task {
+            await viewModel.refreshWeather()
+        }
+        await taskBox.task?.value
+
+        let recordedSleeps = await sleepRecorder.values
+        XCTAssertEqual(recordedSleeps, [.seconds(720)])
+        XCTAssertEqual(viewModel.temperatureText, "66°")
+    }
+
     func testAPIErrorUsesCloudSlashAfterConfiguredRetries() async {
         let service = SequencedWeatherService(results: [
             .failure(.requestFailed),
@@ -306,6 +343,10 @@ final class WeatherViewModelTests: XCTestCase {
 
         return Data(json.utf8)
     }
+}
+
+private final class TaskBox: @unchecked Sendable {
+    var task: Task<Void, Never>?
 }
 
 private actor SleepRecorder {
