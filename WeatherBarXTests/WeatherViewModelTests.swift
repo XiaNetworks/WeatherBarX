@@ -36,7 +36,19 @@ final class WeatherViewModelTests: XCTestCase {
     func testWeatherCodeMapsToRainCondition() {
         let condition = WeatherCondition(weatherCode: 61, isDaylight: true)
 
-        XCTAssertEqual(condition.iconName, "cloud.rain.fill")
+        XCTAssertEqual(condition.iconName(isDaylight: true), "cloud.rain.fill")
+    }
+
+    func testClearConditionUsesMoonIconAtNight() {
+        let condition = WeatherCondition(weatherCode: 0, isDaylight: false)
+
+        XCTAssertEqual(condition.iconName(isDaylight: false), "moon.stars.fill")
+    }
+
+    func testPartlyCloudyConditionUsesMoonCloudIconAtNight() {
+        let condition = WeatherCondition(weatherCode: 1, isDaylight: false)
+
+        XCTAssertEqual(condition.iconName(isDaylight: false), "cloud.moon.fill")
     }
 
     func testLiveRefreshStartsInLoadingState() {

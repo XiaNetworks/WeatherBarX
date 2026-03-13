@@ -32,7 +32,7 @@ enum WeatherCondition: String, Equatable {
         }
     }
 
-    var iconName: String {
+    func iconName(isDaylight: Bool) -> String {
         switch self {
         case .placeholder:
             return "sun.max.fill"
@@ -41,9 +41,9 @@ enum WeatherCondition: String, Equatable {
         case .apiError:
             return "cloud.slash"
         case .clear:
-            return "sun.max.fill"
+            return isDaylight ? "sun.max.fill" : "moon.stars.fill"
         case .partlyCloudy:
-            return "cloud.sun.fill"
+            return isDaylight ? "cloud.sun.fill" : "cloud.moon.fill"
         case .cloudy:
             return "cloud.fill"
         case .fog:

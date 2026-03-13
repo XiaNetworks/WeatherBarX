@@ -4,23 +4,27 @@ struct WeatherSnapshot: Equatable {
     let summary: String
     let temperature: Int?
     let condition: WeatherCondition
+    let isDaylight: Bool
 
     static let placeholder = WeatherSnapshot(
         summary: "Placeholder weather",
         temperature: 72,
-        condition: .placeholder
+        condition: .placeholder,
+        isDaylight: true
     )
 
     static let networkUnavailable = WeatherSnapshot(
         summary: WeatherCondition.networkError.summary,
         temperature: nil,
-        condition: .networkError
+        condition: .networkError,
+        isDaylight: true
     )
 
     static let apiUnavailable = WeatherSnapshot(
         summary: WeatherCondition.apiError.summary,
         temperature: nil,
-        condition: .apiError
+        condition: .apiError,
+        isDaylight: true
     )
 }
 
@@ -60,8 +64,11 @@ struct OpenMeteoWeatherService: WeatherServing {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,weather_code,is_day"),
+            URLQueryItem(name: "current", value: "temperature_2m,weather_code,time"),
+            URLQueryItem(name: "daily", value: "sunrise,sunset"),
+            URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
+            URLQueryItem(name: "timezone", value: "auto"),
         ]
 
         guard let url = components?.url else {
@@ -83,15 +90,17 @@ struct OpenMeteoWeatherService: WeatherServing {
             throw WeatherServiceError.decodeFailed
         }
 
+        let isDaylight = payload.isCurrentTimeInDaylight
         let condition = WeatherCondition(
             weatherCode: payload.current.weatherCode,
-            isDaylight: payload.current.isDay == 1
+            isDaylight: isDaylight
         )
 
         return WeatherSnapshot(
             summary: condition.summary,
             temperature: Int(payload.current.temperature.rounded()),
-            condition: condition
+            condition: condition,
+            isDaylight: isDaylight
         )
     }
 
@@ -115,17 +124,38 @@ struct OpenMeteoWeatherService: WeatherServing {
 
 private struct OpenMeteoForecastResponse: Decodable {
     let current: CurrentWeather
+    let daily: DailyWeather
+
+    var isCurrentTimeInDaylight: Bool {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+
+        guard
+            let currentDate = formatter.date(from: current.time),
+            let sunrise = formatter.date(from: daily.sunrise.first ?? ""),
+            let sunset = formatter.date(from: daily.sunset.first ?? "")
+        else {
+            return true
+        }
+
+        return currentDate >= sunrise && currentDate < sunset
+    }
 
     struct CurrentWeather: Decodable {
         let temperature: Double
         let weatherCode: Int
-        let isDay: Int
+        let time: String
 
         enum CodingKeys: String, CodingKey {
             case temperature = "temperature_2m"
             case weatherCode = "weather_code"
-            case isDay = "is_day"
+            case time
         }
+    }
+
+    struct DailyWeather: Decodable {
+        let sunrise: [String]
+        let sunset: [String]
     }
 }
 
@@ -190,9 +220,8 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var conditionIconName: String {
-        snapshot.condition.iconName
+        snapshot.condition.iconName(isDaylight: snapshot.isDaylight)
     }
-
 
     func refreshWeather() async {
         let attemptDelays = [Duration.zero] + retryDelays
