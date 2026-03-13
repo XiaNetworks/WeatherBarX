@@ -831,6 +831,7 @@ final class WeatherViewModel: ObservableObject {
         defaults.set(currentLocation.name, forKey: WeatherSettings.locationNameKey)
         defaults.set(currentLocation.latitude, forKey: WeatherSettings.latitudeKey)
         defaults.set(currentLocation.longitude, forKey: WeatherSettings.longitudeKey)
+        defaults.synchronize()
     }
 
     private func startRefreshLoop(showLoadingState: Bool) {

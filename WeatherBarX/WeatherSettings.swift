@@ -117,7 +117,7 @@ struct WeatherSettings: Equatable {
             normalized.append(nil)
         }
 
-        if normalized[0] == nil {
+        if normalized.allSatisfy({ $0 == nil }) {
             normalized[0] = defaultPrimaryLocation
         }
 

@@ -313,8 +313,43 @@ final class WeatherViewModelTests: XCTestCase {
         viewModel.deleteLocation(at: 1)
 
         XCTAssertNil(viewModel.savedLocations[1])
+        let persistedData = defaults.data(forKey: WeatherSettings.savedLocationsKey)
+        XCTAssertNotNil(persistedData)
+        let persistedLocations = persistedData.flatMap { try? JSONDecoder().decode([SavedLocation?].self, from: $0) }
+        XCTAssertNotNil(persistedLocations)
+        XCTAssertNil(persistedLocations?[1])
+
         let reloadedSettings = WeatherSettings(defaults: defaults)
         XCTAssertNil(reloadedSettings.savedLocations[1])
+    }
+
+    func testDeletingPrimaryLocationPersistsWhenAnotherLocationIsSelected() {
+        let defaults = makeDefaults()
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        viewModel.selectLocation(at: 1)
+        XCTAssertTrue(viewModel.canDeleteLocation(at: 0))
+
+        viewModel.deleteLocation(at: 0)
+
+        XCTAssertNil(viewModel.savedLocations[0])
+        XCTAssertEqual(viewModel.selectedLocationIndex, 1)
+
+        let persistedData = defaults.data(forKey: WeatherSettings.savedLocationsKey)
+        XCTAssertNotNil(persistedData)
+        let persistedLocations = persistedData.flatMap { try? JSONDecoder().decode([SavedLocation?].self, from: $0) }
+        XCTAssertNotNil(persistedLocations)
+        XCTAssertNil(persistedLocations?[0])
+
+        let reloadedSettings = WeatherSettings(defaults: defaults)
+        XCTAssertNil(reloadedSettings.savedLocations[0])
+        XCTAssertEqual(reloadedSettings.savedLocations[1], WeatherSettings.defaultNorthPoleLocation)
+        XCTAssertEqual(reloadedSettings.selectedLocationIndex, 1)
     }
 
     func testLaunchAtLoginToggleUpdatesButtonState() {
