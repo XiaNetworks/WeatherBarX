@@ -5,26 +5,42 @@ struct WeatherSnapshot: Equatable {
     let temperature: Int?
     let condition: WeatherCondition
     let isDaylight: Bool
+    let sunrise: Date?
+    let sunset: Date?
+    let highTemperature: Int?
+    let lowTemperature: Int?
 
     static let placeholder = WeatherSnapshot(
         summary: "Placeholder weather",
         temperature: 72,
         condition: .placeholder,
-        isDaylight: true
+        isDaylight: true,
+        sunrise: nil,
+        sunset: nil,
+        highTemperature: 76,
+        lowTemperature: 64
     )
 
     static let networkUnavailable = WeatherSnapshot(
         summary: WeatherCondition.networkError.summary,
         temperature: nil,
         condition: .networkError,
-        isDaylight: true
+        isDaylight: true,
+        sunrise: nil,
+        sunset: nil,
+        highTemperature: nil,
+        lowTemperature: nil
     )
 
     static let apiUnavailable = WeatherSnapshot(
         summary: WeatherCondition.apiError.summary,
         temperature: nil,
         condition: .apiError,
-        isDaylight: true
+        isDaylight: true,
+        sunrise: nil,
+        sunset: nil,
+        highTemperature: nil,
+        lowTemperature: nil
     )
 }
 
@@ -64,8 +80,8 @@ struct OpenMeteoWeatherService: WeatherServing {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
-            URLQueryItem(name: "daily", value: "sunrise,sunset"),
+            URLQueryItem(name: "current", value: "temperature_2m,weather_code,time"),
+            URLQueryItem(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min"),
             URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -129,7 +145,11 @@ struct OpenMeteoWeatherService: WeatherServing {
             summary: condition.summary,
             temperature: roundedTemperature(from: payload.current.temperature),
             condition: condition,
-            isDaylight: isDaylight
+            isDaylight: isDaylight,
+            sunrise: payload.sunriseDate,
+            sunset: payload.sunsetDate,
+            highTemperature: payload.daily.temperatureMax.first.map(roundedTemperature(from:)),
+            lowTemperature: payload.daily.temperatureMin.first.map(roundedTemperature(from:))
         )
     }
 }
@@ -140,20 +160,35 @@ struct OpenMeteoForecastResponse: Decodable {
     let daily: DailyWeather
 
     var isCurrentTimeInDaylight: Bool {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        formatter.timeZone = TimeZone(identifier: timezone)
-
         guard
-            let currentDate = formatter.date(from: current.time),
-            let sunrise = formatter.date(from: daily.sunrise.first ?? ""),
-            let sunset = formatter.date(from: daily.sunset.first ?? "")
+            let currentDate = localDate(from: current.time),
+            let sunriseDate,
+            let sunsetDate
         else {
             return true
         }
 
-        return currentDate >= sunrise && currentDate < sunset
+        return currentDate >= sunriseDate && currentDate < sunsetDate
+    }
+
+    var sunriseDate: Date? {
+        localDate(from: daily.sunrise.first)
+    }
+
+    var sunsetDate: Date? {
+        localDate(from: daily.sunset.first)
+    }
+
+    private func localDate(from value: String?) -> Date? {
+        guard let value else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        formatter.timeZone = TimeZone(identifier: timezone)
+        return formatter.date(from: value)
     }
 
     struct CurrentWeather: Decodable {
@@ -171,16 +206,22 @@ struct OpenMeteoForecastResponse: Decodable {
     struct DailyWeather: Decodable {
         let sunrise: [String]
         let sunset: [String]
+        let temperatureMax: [Double]
+        let temperatureMin: [Double]
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             sunrise = try container.decodeIfPresent([String].self, forKey: .sunrise) ?? []
             sunset = try container.decodeIfPresent([String].self, forKey: .sunset) ?? []
+            temperatureMax = try container.decodeIfPresent([Double].self, forKey: .temperatureMax) ?? []
+            temperatureMin = try container.decodeIfPresent([Double].self, forKey: .temperatureMin) ?? []
         }
 
         private enum CodingKeys: String, CodingKey {
             case sunrise
             case sunset
+            case temperatureMax = "temperature_2m_max"
+            case temperatureMin = "temperature_2m_min"
         }
     }
 }
@@ -247,15 +288,25 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var temperatureText: String {
-        guard let temperature = snapshot.temperature else {
-            return "--"
-        }
-
-        return "\(temperature)\u{00B0}"
+        formatTemperature(snapshot.temperature)
     }
 
     var conditionIconName: String {
         snapshot.condition.iconName(isDaylight: snapshot.isDaylight)
+    }
+
+    var dailyRangeText: String {
+        let high = formatTemperature(snapshot.highTemperature)
+        let low = formatTemperature(snapshot.lowTemperature)
+        return "H: \(high)  L: \(low)"
+    }
+
+    var sunriseText: String {
+        formatSunriseText()
+    }
+
+    var sunsetText: String {
+        formatSunsetText()
     }
 
     var lastCheckText: String {
@@ -287,8 +338,16 @@ final class WeatherViewModel: ObservableObject {
             return "Last checked: --"
         }
 
-        let formatter = formatter ?? Self.lastCheckFormatter
+        let formatter = formatter ?? Self.timeFormatter
         return "Last checked: \(formatter.string(from: lastCheckAt))"
+    }
+
+    func formatSunriseText(using formatter: DateFormatter? = nil) -> String {
+        "Sunrise: \(formatTime(snapshot.sunrise, using: formatter))"
+    }
+
+    func formatSunsetText(using formatter: DateFormatter? = nil) -> String {
+        "Sunset: \(formatTime(snapshot.sunset, using: formatter))"
     }
 
     private func runRefreshCycle() async -> Bool {
@@ -389,7 +448,24 @@ final class WeatherViewModel: ObservableObject {
         }
     }
 
-    private static let lastCheckFormatter: DateFormatter = {
+    private func formatTemperature(_ value: Int?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(value)°"
+    }
+
+    private func formatTime(_ value: Date?, using formatter: DateFormatter? = nil) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        let formatter = formatter ?? Self.timeFormatter
+        return formatter.string(from: value)
+    }
+
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = .none

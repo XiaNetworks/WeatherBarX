@@ -17,6 +17,21 @@ struct MenuContentView: View {
             Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
                 .accessibilityIdentifier("temperature-label")
 
+            Text(viewModel.dailyRangeText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("daily-range-text")
+
+            HStack(spacing: 12) {
+                Text(viewModel.sunriseText)
+                    .accessibilityIdentifier("sunrise-text")
+
+                Text(viewModel.sunsetText)
+                    .accessibilityIdentifier("sunset-text")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
             Text(viewModel.lastCheckText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -29,6 +44,6 @@ struct MenuContentView: View {
                 .accessibilityIdentifier("quit-button")
         }
         .padding()
-        .frame(width: 220)
+        .frame(width: 260)
     }
 }

@@ -27,6 +27,15 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.summary, "Cloudy")
         XCTAssertEqual(snapshot.condition, .cloudy)
         XCTAssertTrue(snapshot.isDaylight)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "h:mm a"
+
+        XCTAssertEqual(snapshot.highTemperature, 76)
+        XCTAssertEqual(snapshot.lowTemperature, 61)
+        XCTAssertEqual(snapshot.sunrise.map(formatter.string(from:)), "7:15 AM")
+        XCTAssertEqual(snapshot.sunset.map(formatter.string(from:)), "7:05 PM")
     }
 
     func testSunriseSunsetPayloadUsesDayIconDuringDaylight() throws {
@@ -196,6 +205,7 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
         XCTAssertEqual(viewModel.temperatureText, "72°")
+        XCTAssertEqual(viewModel.dailyRangeText, "H: 76°  L: 64°")
     }
 
     func testPlaceholderConditionMapsToCorrectIconName() {
@@ -236,6 +246,26 @@ final class WeatherViewModelTests: XCTestCase {
         let recordedSleeps = await sleepRecorder.values
         XCTAssertEqual(recordedSleeps, [.seconds(600)])
         XCTAssertEqual(viewModel.formatLastCheckText(using: formatter), "Last checked: \(formatter.string(from: fixedDate))")
+        XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: --")
+        XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: --")
+    }
+
+    func testWeatherDetailTextFormatsSunriseSunsetAndRange() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-rain"))
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "h:mm a"
+
+        XCTAssertEqual(viewModel.dailyRangeText, "H: 75°  L: 63°")
+        XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: 7:15 AM")
+        XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: 7:05 PM")
     }
 
     func testSettingsDefaultsLoadCorrectly() {
@@ -278,7 +308,11 @@ final class WeatherViewModelTests: XCTestCase {
             summary: "Clear sky",
             temperature: 66,
             condition: .clear,
-            isDaylight: true
+            isDaylight: true,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 70,
+            lowTemperature: 55
         )
         let service = GatedWeatherService()
         let viewModel = WeatherViewModel(
@@ -327,7 +361,11 @@ final class WeatherViewModelTests: XCTestCase {
             summary: "Clear sky",
             temperature: 66,
             condition: .clear,
-            isDaylight: true
+            isDaylight: true,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 70,
+            lowTemperature: 55
         )
         let service = SequencedWeatherService(results: [
             .success(updatedSnapshot),

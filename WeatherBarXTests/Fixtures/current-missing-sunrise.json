@@ -7,6 +7,8 @@
   },
   "daily": {
     "sunrise": [],
-    "sunset": []
+    "sunset": [],
+    "temperature_2m_max": [69.2],
+    "temperature_2m_min": [58.3]
   }
 }
