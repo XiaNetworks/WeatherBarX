@@ -329,8 +329,10 @@ final class WeatherViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool
     @Published private(set) var snapshot: WeatherSnapshot
     @Published private(set) var lastCheckAt: Date?
+    @Published private(set) var temperatureUnit: TemperatureUnit
 
     let settings: WeatherSettings
+    private let defaults: UserDefaults
     private let weatherService: WeatherServing
     private let retryDelays: [Duration]
     private let postErrorRetryDelays: [Duration]
@@ -356,8 +358,10 @@ final class WeatherViewModel: ObservableObject {
     ) {
         let settings = WeatherSettings(defaults: defaults)
         self.settings = settings
+        self.defaults = defaults
         self.snapshot = snapshot ?? .placeholder
         self.isLoading = refreshOnInit && !settings.usesPlaceholderWeather
+        self.temperatureUnit = settings.temperatureUnit
         self.weatherService = weatherService
         self.retryDelays = retryDelays
         self.postErrorRetryDelays = postErrorRetryDelays
@@ -392,6 +396,10 @@ final class WeatherViewModel: ObservableObject {
         }
 
         return formatTemperature(snapshot.temperature)
+    }
+
+    var temperatureUnitButtonText: String {
+        temperatureUnit.displayText
     }
 
     var conditionIconName: String {
@@ -472,6 +480,12 @@ final class WeatherViewModel: ObservableObject {
         }
 
         startRefreshLoop(showLoadingState: true)
+    }
+
+    func toggleTemperatureUnit() {
+        temperatureUnit.toggle()
+        defaults.set(temperatureUnit.rawValue, forKey: WeatherSettings.temperatureUnitKey)
+        objectWillChange.send()
     }
 
     func toggleMenuPresentation() {
@@ -615,7 +629,15 @@ final class WeatherViewModel: ObservableObject {
             return "--"
         }
 
-        return "\(value)°"
+        let displayValue: Int
+        switch temperatureUnit {
+        case .fahrenheit:
+            displayValue = value
+        case .celsius:
+            displayValue = Int((((Double(value) - 32) * 5) / 9).rounded())
+        }
+
+        return "\(displayValue)°"
     }
 
     private func formatTime(_ value: Date?, using formatter: DateFormatter? = nil) -> String {

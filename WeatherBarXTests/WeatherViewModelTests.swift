@@ -202,6 +202,22 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
+    func testTemperatureUnitToggleConvertsDisplayedTemperatures() {
+        let viewModel = makePlaceholderViewModel()
+
+        XCTAssertEqual(viewModel.temperatureUnitButtonText, "°F")
+        XCTAssertEqual(viewModel.temperatureText, "72°")
+        XCTAssertEqual(viewModel.highDetailText, "High: 76° at --")
+        XCTAssertEqual(viewModel.lowDetailText, "Low: 64° at --")
+
+        viewModel.toggleTemperatureUnit()
+
+        XCTAssertEqual(viewModel.temperatureUnitButtonText, "°C")
+        XCTAssertEqual(viewModel.temperatureText, "22°")
+        XCTAssertEqual(viewModel.highDetailText, "High: 24° at --")
+        XCTAssertEqual(viewModel.lowDetailText, "Low: 18° at --")
+    }
+
     func testPlaceholderStateProducesExpectedStatusItemValues() {
         let viewModel = makePlaceholderViewModel()
 
@@ -325,6 +341,7 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(settings.latitude, 38.9072)
         XCTAssertEqual(settings.longitude, -77.0369)
         XCTAssertFalse(settings.usesPlaceholderWeather)
+        XCTAssertEqual(settings.temperatureUnit, .fahrenheit)
     }
 
     func testClearConditionUsesMoonIconAtNight() {

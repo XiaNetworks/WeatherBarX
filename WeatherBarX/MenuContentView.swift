@@ -112,9 +112,18 @@ struct MenuContentView: View {
 
             Divider()
 
-            Button("Quit", action: onQuit)
-                .keyboardShortcut("q")
-                .accessibilityIdentifier("quit-button")
+            HStack(spacing: 8) {
+                Button("Quit", action: onQuit)
+                    .keyboardShortcut("q")
+                    .accessibilityIdentifier("quit-button")
+
+                Spacer()
+
+                Button(viewModel.temperatureUnitButtonText, action: viewModel.toggleTemperatureUnit)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("temperature-unit-button")
+            }
         }
         .padding()
         .frame(width: 280)
