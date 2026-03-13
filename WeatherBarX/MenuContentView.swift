@@ -1,4 +1,10 @@
+import AppKit
 import SwiftUI
+
+private enum MenuDetailColors {
+    static let detail = Color(nsColor: NSColor.labelColor)
+    static let meta = Color(nsColor: NSColor.secondaryLabelColor)
+}
 
 struct MenuContentView: View {
     @ObservedObject var viewModel: WeatherViewModel
@@ -19,7 +25,7 @@ struct MenuContentView: View {
 
             Text(viewModel.dailyRangeText)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundColor(MenuDetailColors.detail)
                 .accessibilityIdentifier("daily-range-text")
 
             HStack(spacing: 12) {
@@ -30,11 +36,11 @@ struct MenuContentView: View {
                     .accessibilityIdentifier("sunset-text")
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundColor(MenuDetailColors.detail)
 
             Text(viewModel.lastCheckText)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundColor(MenuDetailColors.meta)
                 .accessibilityIdentifier("last-check-text")
 
             Divider()

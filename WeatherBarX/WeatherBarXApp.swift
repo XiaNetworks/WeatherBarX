@@ -79,6 +79,7 @@ struct WeatherBarXApp: App {
             }
             .accessibilityIdentifier("status-item-button")
         }
+        .menuBarExtraStyle(.window)
     }
 
     private func quit() {
