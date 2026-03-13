@@ -6,9 +6,9 @@ struct WeatherSettings: Equatable {
     static let longitudeKey = "longitude"
     static let usesPlaceholderWeatherKey = "usesPlaceholderWeather"
 
-    static let defaultLocationName = "WeatherBarX"
-    static let defaultLatitude = 40.7128
-    static let defaultLongitude = -74.0060
+    static let defaultLocationName = "Washington, DC"
+    static let defaultLatitude = 38.9072
+    static let defaultLongitude = -77.0369
     static let defaultUsesPlaceholderWeather = false
 
     let locationName: String

@@ -26,9 +26,9 @@ final class WeatherViewModelTests: XCTestCase {
 
         let settings = WeatherSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.locationName, "WeatherBarX")
-        XCTAssertEqual(settings.latitude, 40.7128)
-        XCTAssertEqual(settings.longitude, -74.0060)
+        XCTAssertEqual(settings.locationName, "Washington, DC")
+        XCTAssertEqual(settings.latitude, 38.9072)
+        XCTAssertEqual(settings.longitude, -77.0369)
         XCTAssertFalse(settings.usesPlaceholderWeather)
     }
 
