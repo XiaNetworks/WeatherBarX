@@ -25,16 +25,151 @@ private struct DetailRow: View {
     }
 }
 
+private struct AddLocationEditorView: View {
+    @Binding var locationName: String
+    @Binding var latitudeText: String
+    @Binding var longitudeText: String
+    let errorMessage: String?
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Add Location")
+                .font(.subheadline.weight(.semibold))
+
+            TextField("Location name", text: $locationName)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-name-field")
+
+            TextField("Latitude", text: $latitudeText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-latitude-field")
+
+            TextField("Longitude", text: $longitudeText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("add-location-longitude-field")
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("add-location-error-text")
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+
+                Button("Cancel", action: onCancel)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("add-location-cancel-button")
+
+                Button("Save", action: onSave)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("add-location-save-button")
+            }
+        }
+        .padding(12)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
 struct MenuContentView: View {
     @ObservedObject var viewModel: WeatherViewModel
     let onRefresh: () -> Void
     let onQuit: () -> Void
 
+    @State private var isShowingLocationOptions = false
+    @State private var editingLocationSlotIndex: Int?
+    @State private var draftLocationName = ""
+    @State private var draftLatitude = ""
+    @State private var draftLongitude = ""
+    @State private var addLocationError: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(viewModel.locationName)
-                .font(.headline)
-                .accessibilityIdentifier("location-name-text")
+            VStack(alignment: .leading, spacing: 6) {
+                Button(action: toggleLocationOptions) {
+                    HStack(spacing: 8) {
+                        Text(viewModel.locationName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Image(systemName: isShowingLocationOptions ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+                )
+                .accessibilityIdentifier("location-picker-button")
+
+                if isShowingLocationOptions {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(viewModel.alternateLocationSlots) { slot in
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    handleLocationSlotTap(slot)
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: slot.isEmpty ? "plus.circle" : "mappin.and.ellipse")
+                                            .foregroundStyle(slot.isEmpty ? .secondary : .primary)
+                                        Text(slot.title)
+                                            .foregroundStyle(slot.isEmpty ? .secondary : .primary)
+                                        Spacer()
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 4)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("location-slot-\(slot.index)")
+
+                                if !slot.isEmpty && viewModel.canDeleteLocation(at: slot.index) {
+                                    Button(role: .destructive, action: {
+                                        viewModel.deleteLocation(at: slot.index)
+                                    }) {
+                                        Image(systemName: "trash")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Delete location")
+                                    .accessibilityIdentifier("delete-location-slot-\(slot.index)")
+                                }
+                            }
+                        }
+
+                        if editingLocationSlotIndex != nil {
+                            AddLocationEditorView(
+                                locationName: $draftLocationName,
+                                latitudeText: $draftLatitude,
+                                longitudeText: $draftLongitude,
+                                errorMessage: addLocationError,
+                                onCancel: dismissAddLocationEditor,
+                                onSave: submitLocation
+                            )
+                            .accessibilityIdentifier("add-location-editor")
+                        }
+                    }
+                    .padding(.leading, 2)
+                }
+            }
 
             Text(viewModel.summaryText)
                 .foregroundStyle(.secondary)
@@ -134,6 +269,56 @@ struct MenuContentView: View {
             }
         }
         .padding()
-        .frame(width: 280)
+        .frame(width: 300)
+    }
+
+    private func toggleLocationOptions() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            isShowingLocationOptions.toggle()
+        }
+
+        if !isShowingLocationOptions {
+            dismissAddLocationEditor()
+        }
+    }
+
+    private func handleLocationSlotTap(_ slot: LocationSlot) {
+        if slot.isEmpty {
+            draftLocationName = ""
+            draftLatitude = ""
+            draftLongitude = ""
+            addLocationError = nil
+            editingLocationSlotIndex = slot.index
+        } else {
+            viewModel.selectLocation(at: slot.index)
+            isShowingLocationOptions = false
+            dismissAddLocationEditor()
+        }
+    }
+
+    private func dismissAddLocationEditor() {
+        editingLocationSlotIndex = nil
+        addLocationError = nil
+    }
+
+    private func submitLocation() {
+        guard let slotIndex = editingLocationSlotIndex else {
+            return
+        }
+
+        do {
+            try viewModel.addLocation(
+                at: slotIndex,
+                name: draftLocationName,
+                latitudeText: draftLatitude,
+                longitudeText: draftLongitude
+            )
+            isShowingLocationOptions = false
+            dismissAddLocationEditor()
+        } catch let error as LocationInputError {
+            addLocationError = error.errorDescription
+        } catch {
+            addLocationError = "Unable to save location."
+        }
     }
 }

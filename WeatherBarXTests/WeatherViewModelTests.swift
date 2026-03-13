@@ -202,6 +202,74 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
     }
 
+    func testDefaultLocationSlotsIncludeWashingtonNorthPoleAndSouthPole() {
+        let settings = WeatherSettings(defaults: makeDefaults())
+
+        XCTAssertEqual(settings.savedLocations.count, 3)
+        XCTAssertEqual(settings.savedLocations[0], WeatherSettings.defaultPrimaryLocation)
+        XCTAssertEqual(settings.savedLocations[1], WeatherSettings.defaultNorthPoleLocation)
+        XCTAssertEqual(settings.savedLocations[2], WeatherSettings.defaultSouthPoleLocation)
+        XCTAssertEqual(settings.selectedLocationIndex, 0)
+    }
+
+    func testAddingLocationToEmptySlotPersistsAndSelectsIt() throws {
+        let defaults = makeDefaults()
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        try viewModel.addLocation(at: 1, name: "New York, NY", latitudeText: "40.7128", longitudeText: "-74.0060")
+
+        XCTAssertEqual(viewModel.locationName, "New York, NY")
+        XCTAssertEqual(viewModel.selectedLocationIndex, 1)
+        XCTAssertEqual(viewModel.savedLocations[1], SavedLocation(name: "New York, NY", latitude: 40.7128, longitude: -74.0060))
+
+        let reloadedSettings = WeatherSettings(defaults: defaults)
+        XCTAssertEqual(reloadedSettings.selectedLocationIndex, 1)
+        XCTAssertEqual(reloadedSettings.savedLocations[1], SavedLocation(name: "New York, NY", latitude: 40.7128, longitude: -74.0060))
+    }
+
+    func testSelectingSavedAlternateLocationUpdatesCurrentLocation() throws {
+        let defaults = makeDefaults()
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        try viewModel.addLocation(at: 1, name: "Boston, MA", latitudeText: "42.3601", longitudeText: "-71.0589")
+        viewModel.selectLocation(at: 0)
+
+        XCTAssertEqual(viewModel.locationName, "Washington, DC")
+        XCTAssertEqual(viewModel.selectedLocationIndex, 0)
+
+        let reloadedSettings = WeatherSettings(defaults: defaults)
+        XCTAssertEqual(reloadedSettings.selectedLocationIndex, 0)
+        XCTAssertEqual(reloadedSettings.locationName, "Washington, DC")
+    }
+
+    func testDeletingSavedAlternateLocationClearsItsSlotAndPersists() {
+        let defaults = makeDefaults()
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertTrue(viewModel.canDeleteLocation(at: 1))
+
+        viewModel.deleteLocation(at: 1)
+
+        XCTAssertNil(viewModel.savedLocations[1])
+        let reloadedSettings = WeatherSettings(defaults: defaults)
+        XCTAssertNil(reloadedSettings.savedLocations[1])
+    }
+
     func testLaunchAtLoginToggleUpdatesButtonState() {
         let launchAtLoginManager = MockLaunchAtLoginManager(isEnabled: false)
         let viewModel = WeatherViewModel(
@@ -360,6 +428,10 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(settings.longitude, -77.0369)
         XCTAssertFalse(settings.usesPlaceholderWeather)
         XCTAssertEqual(settings.temperatureUnit, .fahrenheit)
+        XCTAssertEqual(settings.savedLocations.count, 3)
+        XCTAssertEqual(settings.savedLocations[1], WeatherSettings.defaultNorthPoleLocation)
+        XCTAssertEqual(settings.savedLocations[2], WeatherSettings.defaultSouthPoleLocation)
+        XCTAssertEqual(settings.selectedLocationIndex, 0)
     }
 
     func testClearConditionUsesMoonIconAtNight() {

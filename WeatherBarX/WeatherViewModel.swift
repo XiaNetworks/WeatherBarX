@@ -351,6 +351,42 @@ struct OpenMeteoForecastResponse: Decodable {
 }
 
 @MainActor
+struct LocationSlot: Identifiable, Equatable {
+    let index: Int
+    let location: SavedLocation?
+
+    var id: Int { index }
+
+    var title: String {
+        location?.name ?? "Add Location"
+    }
+
+    var isEmpty: Bool {
+        location == nil
+    }
+}
+
+enum LocationInputError: LocalizedError, Equatable {
+    case emptyName
+    case invalidLatitude
+    case invalidLongitude
+    case invalidSlot
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName:
+            return "Enter a location name."
+        case .invalidLatitude:
+            return "Enter a latitude between -90 and 90."
+        case .invalidLongitude:
+            return "Enter a longitude between -180 and 180."
+        case .invalidSlot:
+            return "Unable to save this location slot."
+        }
+    }
+}
+
+@MainActor
 final class WeatherViewModel: ObservableObject {
     @Published var isMenuPresented = false
     @Published private(set) var isLoading: Bool
@@ -358,6 +394,8 @@ final class WeatherViewModel: ObservableObject {
     @Published private(set) var lastCheckAt: Date?
     @Published private(set) var isLaunchAtLoginEnabled: Bool
     @Published private(set) var temperatureUnit: TemperatureUnit
+    @Published private(set) var savedLocations: [SavedLocation?]
+    @Published private(set) var selectedLocationIndex: Int
 
     let settings: WeatherSettings
     private let defaults: UserDefaults
@@ -393,6 +431,8 @@ final class WeatherViewModel: ObservableObject {
         self.isLoading = refreshOnInit && !settings.usesPlaceholderWeather
         self.isLaunchAtLoginEnabled = launchAtLoginManager.isEnabled
         self.temperatureUnit = settings.temperatureUnit
+        self.savedLocations = settings.savedLocations
+        self.selectedLocationIndex = settings.selectedLocationIndex
         self.launchAtLoginManager = launchAtLoginManager
         self.weatherService = weatherService
         self.retryDelays = retryDelays
@@ -411,7 +451,17 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var locationName: String {
-        settings.locationName
+        currentLocation.name
+    }
+
+    var alternateLocationSlots: [LocationSlot] {
+        savedLocations.enumerated().compactMap { index, location in
+            guard index != selectedLocationIndex else {
+                return nil
+            }
+
+            return LocationSlot(index: index, location: location)
+        }
     }
 
     var summaryText: String {
@@ -535,6 +585,73 @@ final class WeatherViewModel: ObservableObject {
         }
     }
 
+    func selectLocation(at index: Int) {
+        guard savedLocations.indices.contains(index), savedLocations[index] != nil else {
+            return
+        }
+
+        selectedLocationIndex = index
+        persistLocationState()
+        resetForLocationChange()
+    }
+
+    func canDeleteLocation(at index: Int) -> Bool {
+        guard savedLocations.indices.contains(index), savedLocations[index] != nil else {
+            return false
+        }
+
+        return savedLocations.compactMap { $0 }.count > 1
+    }
+
+    func deleteLocation(at index: Int) {
+        guard canDeleteLocation(at: index) else {
+            return
+        }
+
+        let wasSelectedLocation = selectedLocationIndex == index
+        savedLocations[index] = nil
+
+        if wasSelectedLocation {
+            selectedLocationIndex = savedLocations.firstIndex(where: { $0 != nil }) ?? 0
+        }
+
+        persistLocationState()
+
+        if wasSelectedLocation {
+            resetForLocationChange()
+        }
+    }
+
+    func addLocation(at index: Int, name: String, latitudeText: String, longitudeText: String) throws {
+        guard savedLocations.indices.contains(index) else {
+            throw LocationInputError.invalidSlot
+        }
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw LocationInputError.emptyName
+        }
+
+        guard
+            let latitude = Double(latitudeText.trimmingCharacters(in: .whitespacesAndNewlines)),
+            (-90 ... 90).contains(latitude)
+        else {
+            throw LocationInputError.invalidLatitude
+        }
+
+        guard
+            let longitude = Double(longitudeText.trimmingCharacters(in: .whitespacesAndNewlines)),
+            (-180 ... 180).contains(longitude)
+        else {
+            throw LocationInputError.invalidLongitude
+        }
+
+        savedLocations[index] = SavedLocation(name: trimmedName, latitude: latitude, longitude: longitude)
+        selectedLocationIndex = index
+        persistLocationState()
+        resetForLocationChange()
+    }
+
     func toggleMenuPresentation() {
         isMenuPresented.toggle()
     }
@@ -559,6 +676,31 @@ final class WeatherViewModel: ObservableObject {
 
     func formatSunsetText(using formatter: DateFormatter? = nil) -> String {
         "Sunset: \(formatTime(snapshot.sunset, using: formatter))"
+    }
+
+    private var currentLocation: SavedLocation {
+        savedLocations[selectedLocationIndex] ?? WeatherSettings.defaultPrimaryLocation
+    }
+
+    private func resetForLocationChange() {
+        lastCheckAt = nil
+
+        if settings.usesPlaceholderWeather {
+            isLoading = false
+            snapshot = .placeholder
+        } else {
+            startRefreshLoop(showLoadingState: true)
+        }
+    }
+
+    private func persistLocationState() {
+        if let encodedLocations = try? JSONEncoder().encode(savedLocations) {
+            defaults.set(encodedLocations, forKey: WeatherSettings.savedLocationsKey)
+        }
+        defaults.set(selectedLocationIndex, forKey: WeatherSettings.selectedLocationIndexKey)
+        defaults.set(currentLocation.name, forKey: WeatherSettings.locationNameKey)
+        defaults.set(currentLocation.latitude, forKey: WeatherSettings.latitudeKey)
+        defaults.set(currentLocation.longitude, forKey: WeatherSettings.longitudeKey)
     }
 
     private func startRefreshLoop(showLoadingState: Bool) {
@@ -648,8 +790,8 @@ final class WeatherViewModel: ObservableObject {
     private func fetchSnapshot() async -> Result<WeatherSnapshot, WeatherServiceError> {
         do {
             let snapshot = try await weatherService.fetchCurrentWeather(
-                latitude: settings.latitude,
-                longitude: settings.longitude
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude
             )
             lastCheckAt = now()
             return .success(snapshot)

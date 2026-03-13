@@ -36,6 +36,7 @@ final class WeatherBarXUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["72°"].waitForExistence(timeout: 5))
     }
 
+
     func testQuitActionClosesApp() {
         let app = makeApp()
 
