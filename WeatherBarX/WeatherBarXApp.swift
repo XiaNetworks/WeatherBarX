@@ -45,6 +45,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private struct LoadingStatusItemLabel: View {
+    @State private var isRotating = false
+
+    var body: some View {
+        Image(systemName: "arrow.triangle.2.circlepath")
+            .rotationEffect(.degrees(isRotating ? 360 : 0))
+            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isRotating)
+            .onAppear {
+                isRotating = true
+            }
+    }
+}
+
 @main
 struct WeatherBarXApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -54,8 +67,17 @@ struct WeatherBarXApp: App {
         MenuBarExtra {
             MenuContentView(viewModel: viewModel, onQuit: quit)
         } label: {
-            Text(viewModel.menuBarTitle)
-                .accessibilityIdentifier("status-item-button")
+            Group {
+                if viewModel.isLoading {
+                    LoadingStatusItemLabel()
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: viewModel.conditionIconName)
+                        Text(viewModel.temperatureText)
+                    }
+                }
+            }
+            .accessibilityIdentifier("status-item-button")
         }
     }
 

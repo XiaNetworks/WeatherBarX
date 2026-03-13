@@ -2,7 +2,7 @@ import Foundation
 
 struct WeatherSnapshot: Equatable {
     let summary: String
-    let temperature: Int
+    let temperature: Int?
     let condition: WeatherCondition
 
     static let placeholder = WeatherSnapshot(
@@ -10,10 +10,30 @@ struct WeatherSnapshot: Equatable {
         temperature: 72,
         condition: .placeholder
     )
+
+    static let networkUnavailable = WeatherSnapshot(
+        summary: WeatherCondition.networkError.summary,
+        temperature: nil,
+        condition: .networkError
+    )
+
+    static let apiUnavailable = WeatherSnapshot(
+        summary: WeatherCondition.apiError.summary,
+        temperature: nil,
+        condition: .apiError
+    )
 }
 
 protocol WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot
+}
+
+enum WeatherServiceError: Error, Equatable {
+    case networkUnavailable
+    case invalidRequest
+    case invalidResponse
+    case requestFailed
+    case decodeFailed
 }
 
 struct OpenMeteoWeatherService: WeatherServing {
@@ -24,6 +44,18 @@ struct OpenMeteoWeatherService: WeatherServing {
     }
 
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        do {
+            return try await fetchSnapshot(latitude: latitude, longitude: longitude)
+        } catch let error as WeatherServiceError {
+            throw error
+        } catch let error as URLError {
+            throw classify(urlError: error)
+        } catch {
+            throw WeatherServiceError.requestFailed
+        }
+    }
+
+    private func fetchSnapshot(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
@@ -37,11 +69,20 @@ struct OpenMeteoWeatherService: WeatherServing {
         }
 
         let (data, response) = try await session.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, (200 ..< 300).contains(httpResponse.statusCode) else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WeatherServiceError.invalidResponse
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
             throw WeatherServiceError.requestFailed
         }
 
-        let payload = try JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data)
+        let payload: OpenMeteoForecastResponse
+        do {
+            payload = try JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data)
+        } catch {
+            throw WeatherServiceError.decodeFailed
+        }
+
         let condition = WeatherCondition(
             weatherCode: payload.current.weatherCode,
             isDaylight: payload.current.isDay == 1
@@ -53,11 +94,23 @@ struct OpenMeteoWeatherService: WeatherServing {
             condition: condition
         )
     }
-}
 
-enum WeatherServiceError: Error {
-    case invalidRequest
-    case requestFailed
+    private func classify(urlError: URLError) -> WeatherServiceError {
+        switch urlError.code {
+        case .notConnectedToInternet,
+             .networkConnectionLost,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .dnsLookupFailed,
+             .internationalRoamingOff,
+             .callIsActive,
+             .dataNotAllowed,
+             .timedOut:
+            return .networkUnavailable
+        default:
+            return .requestFailed
+        }
+    }
 }
 
 private struct OpenMeteoForecastResponse: Decodable {
@@ -79,27 +132,45 @@ private struct OpenMeteoForecastResponse: Decodable {
 @MainActor
 final class WeatherViewModel: ObservableObject {
     @Published var isMenuPresented = false
+    @Published private(set) var isLoading: Bool
     @Published private(set) var snapshot: WeatherSnapshot
 
     let settings: WeatherSettings
     private let weatherService: WeatherServing
+    private let retryDelays: [Duration]
+    private let repeatedRetryDelay: Duration?
+    private let sleep: @Sendable (Duration) async -> Void
+    private var refreshTask: Task<Void, Never>?
 
     init(
         defaults: UserDefaults = .standard,
         snapshot: WeatherSnapshot? = nil,
         weatherService: WeatherServing = OpenMeteoWeatherService(),
-        refreshOnInit: Bool = true
+        refreshOnInit: Bool = true,
+        retryDelays: [Duration] = [.seconds(10), .seconds(20), .seconds(30)],
+        repeatedRetryDelay: Duration? = .seconds(300),
+        sleep: @escaping @Sendable (Duration) async -> Void = { duration in
+            try? await Task.sleep(for: duration)
+        }
     ) {
         let settings = WeatherSettings(defaults: defaults)
         self.settings = settings
         self.snapshot = snapshot ?? .placeholder
+        self.isLoading = refreshOnInit && !settings.usesPlaceholderWeather
         self.weatherService = weatherService
+        self.retryDelays = retryDelays
+        self.repeatedRetryDelay = repeatedRetryDelay
+        self.sleep = sleep
 
         if refreshOnInit && !settings.usesPlaceholderWeather {
-            Task {
-                await refreshWeather()
+            refreshTask = Task { [weak self] in
+                await self?.refreshWeather()
             }
         }
+    }
+
+    deinit {
+        refreshTask?.cancel()
     }
 
     var locationName: String {
@@ -111,7 +182,11 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var temperatureText: String {
-        "\(snapshot.temperature)\u{00B0}"
+        guard let temperature = snapshot.temperature else {
+            return "--"
+        }
+
+        return "\(temperature)\u{00B0}"
     }
 
     var conditionSymbol: String {
@@ -127,17 +202,77 @@ final class WeatherViewModel: ObservableObject {
     }
 
     func refreshWeather() async {
-        do {
-            snapshot = try await weatherService.fetchCurrentWeather(
-                latitude: settings.latitude,
-                longitude: settings.longitude
-            )
-        } catch {
-            snapshot = .placeholder
+        let attemptDelays = [Duration.zero] + retryDelays
+
+        for (index, delay) in attemptDelays.enumerated() {
+            if index > 0 {
+                await sleep(delay)
+            }
+
+            if Task.isCancelled {
+                return
+            }
+
+            switch await fetchSnapshot() {
+            case .success(let snapshot):
+                isLoading = false
+                self.snapshot = snapshot
+                return
+            case .failure(let error):
+                if index == attemptDelays.count - 1 {
+                    isLoading = false
+                    snapshot = snapshotForError(error)
+                }
+            }
+        }
+
+        guard let repeatedRetryDelay else {
+            return
+        }
+
+        while !Task.isCancelled {
+            await sleep(repeatedRetryDelay)
+
+            if Task.isCancelled {
+                return
+            }
+
+            switch await fetchSnapshot() {
+            case .success(let snapshot):
+                isLoading = false
+                self.snapshot = snapshot
+                return
+            case .failure(let error):
+                isLoading = false
+                snapshot = snapshotForError(error)
+            }
         }
     }
 
     func toggleMenuPresentation() {
         isMenuPresented.toggle()
+    }
+
+    private func fetchSnapshot() async -> Result<WeatherSnapshot, WeatherServiceError> {
+        do {
+            let snapshot = try await weatherService.fetchCurrentWeather(
+                latitude: settings.latitude,
+                longitude: settings.longitude
+            )
+            return .success(snapshot)
+        } catch let error as WeatherServiceError {
+            return .failure(error)
+        } catch {
+            return .failure(.requestFailed)
+        }
+    }
+
+    private func snapshotForError(_ error: WeatherServiceError) -> WeatherSnapshot {
+        switch error {
+        case .networkUnavailable:
+            return .networkUnavailable
+        case .invalidRequest, .invalidResponse, .requestFailed, .decodeFailed:
+            return .apiUnavailable
+        }
     }
 }

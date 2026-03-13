@@ -1,5 +1,7 @@
 enum WeatherCondition: String, Equatable {
     case placeholder
+    case networkError
+    case apiError
     case clear
     case partlyCloudy
     case cloudy
@@ -34,6 +36,10 @@ enum WeatherCondition: String, Equatable {
         switch self {
         case .placeholder:
             return "☀️"
+        case .networkError:
+            return "wifi.slash"
+        case .apiError:
+            return "cloud.slash"
         case .clear:
             return "☀️"
         case .partlyCloudy:
@@ -57,6 +63,10 @@ enum WeatherCondition: String, Equatable {
         switch self {
         case .placeholder:
             return "sun.max.fill"
+        case .networkError:
+            return "wifi.slash"
+        case .apiError:
+            return "cloud.slash"
         case .clear:
             return "sun.max.fill"
         case .partlyCloudy:
@@ -80,6 +90,10 @@ enum WeatherCondition: String, Equatable {
         switch self {
         case .placeholder:
             return "Placeholder weather"
+        case .networkError:
+            return "Network unavailable"
+        case .apiError:
+            return "Weather API unavailable"
         case .clear:
             return "Clear sky"
         case .partlyCloudy:

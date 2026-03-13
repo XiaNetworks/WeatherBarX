@@ -39,6 +39,74 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(condition.iconName, "cloud.rain.fill")
     }
 
+    func testLiveRefreshStartsInLoadingState() {
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: PendingWeatherService(),
+            refreshOnInit: true,
+            repeatedRetryDelay: nil
+        )
+
+        XCTAssertTrue(viewModel.isLoading)
+    }
+
+    func testNetworkErrorUsesWifiSlashAfterConfiguredRetries() async {
+        let service = SequencedWeatherService(results: [
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+        ])
+        var recordedSleeps: [Duration] = []
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
+            repeatedRetryDelay: nil,
+            sleep: { duration in
+                recordedSleeps.append(duration)
+            }
+        )
+
+        await viewModel.refreshWeather()
+
+        XCTAssertEqual(recordedSleeps, [.seconds(10), .seconds(20), .seconds(30)])
+        XCTAssertEqual(viewModel.conditionIconName, "wifi.slash")
+        XCTAssertEqual(viewModel.temperatureText, "--")
+        XCTAssertEqual(viewModel.summaryText, "Network unavailable")
+    }
+
+    func testAPIErrorUsesCloudSlashAfterConfiguredRetries() async {
+        let service = SequencedWeatherService(results: [
+            .failure(.requestFailed),
+            .failure(.requestFailed),
+            .failure(.requestFailed),
+            .failure(.requestFailed),
+        ])
+        var recordedSleeps: [Duration] = []
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
+            repeatedRetryDelay: nil,
+            sleep: { duration in
+                recordedSleeps.append(duration)
+            }
+        )
+
+        await viewModel.refreshWeather()
+
+        XCTAssertEqual(recordedSleeps, [.seconds(10), .seconds(20), .seconds(30)])
+        XCTAssertEqual(viewModel.conditionIconName, "cloud.slash")
+        XCTAssertEqual(viewModel.temperatureText, "--")
+        XCTAssertEqual(viewModel.summaryText, "Weather API unavailable")
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "\(name)-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -62,5 +130,34 @@ final class WeatherViewModelTests: XCTestCase {
 private struct MockWeatherService: WeatherServing {
     func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
         .placeholder
+    }
+}
+
+private struct PendingWeatherService: WeatherServing {
+    func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        try? await Task.sleep(for: .seconds(60))
+        return .placeholder
+    }
+}
+
+private final class SequencedWeatherService: WeatherServing {
+    private var results: [Result<WeatherSnapshot, WeatherServiceError>]
+
+    init(results: [Result<WeatherSnapshot, WeatherServiceError>]) {
+        self.results = results
+    }
+
+    func fetchCurrentWeather(latitude: Double, longitude: Double) async throws -> WeatherSnapshot {
+        guard !results.isEmpty else {
+            return .placeholder
+        }
+
+        let result = results.removeFirst()
+        switch result {
+        case .success(let snapshot):
+            return snapshot
+        case .failure(let error):
+            throw error
+        }
     }
 }
