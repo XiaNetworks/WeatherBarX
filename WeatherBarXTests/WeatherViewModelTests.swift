@@ -3,6 +3,146 @@ import XCTest
 
 @MainActor
 final class WeatherViewModelTests: XCTestCase {
+    func testJSONResponseDecodesIntoWeatherModelCorrectly() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
+            temperature: 72.4,
+            weatherCode: 3,
+            currentTime: "2026-03-12T14:00",
+            sunrise: ["2026-03-12T07:15"],
+            sunset: ["2026-03-12T19:05"]
+        ))
+
+        XCTAssertEqual(snapshot.temperature, 72)
+        XCTAssertEqual(snapshot.summary, "Cloudy")
+        XCTAssertEqual(snapshot.condition, .cloudy)
+        XCTAssertTrue(snapshot.isDaylight)
+    }
+
+    func testSunriseSunsetPayloadUsesDayIconDuringDaylight() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
+            temperature: 68.2,
+            weatherCode: 0,
+            currentTime: "2026-03-12T14:00",
+            sunrise: ["2026-03-12T07:15"],
+            sunset: ["2026-03-12T19:05"]
+        ))
+
+        XCTAssertTrue(snapshot.isDaylight)
+        XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "sun.max.fill")
+    }
+
+    func testSunriseSunsetPayloadUsesNightIconAfterSunset() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
+            temperature: 57.9,
+            weatherCode: 0,
+            currentTime: "2026-03-12T21:00",
+            sunrise: ["2026-03-12T07:15"],
+            sunset: ["2026-03-12T19:05"]
+        ))
+
+        XCTAssertFalse(snapshot.isDaylight)
+        XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "moon.stars.fill")
+    }
+
+    func testSunriseSunsetPayloadTreatsSunsetAsNightBoundary() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
+            temperature: 61.0,
+            weatherCode: 1,
+            currentTime: "2026-03-12T19:05",
+            sunrise: ["2026-03-12T07:15"],
+            sunset: ["2026-03-12T19:05"]
+        ))
+
+        XCTAssertFalse(snapshot.isDaylight)
+        XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "cloud.moon.fill")
+    }
+
+    func testTemperatureConversionLogicIsCorrect() {
+        XCTAssertEqual(OpenMeteoWeatherService.roundedTemperature(from: 72.4), 72)
+        XCTAssertEqual(OpenMeteoWeatherService.roundedTemperature(from: 72.5), 73)
+        XCTAssertEqual(OpenMeteoWeatherService.roundedTemperature(from: -1.6), -2)
+    }
+
+    func testWeatherConditionMappingWorksForClear() {
+        let condition = WeatherCondition(weatherCode: 0, isDaylight: true)
+
+        XCTAssertEqual(condition, .clear)
+        XCTAssertEqual(condition.iconName(isDaylight: true), "sun.max.fill")
+    }
+
+    func testWeatherConditionMappingWorksForCloudy() {
+        let condition = WeatherCondition(weatherCode: 3, isDaylight: true)
+
+        XCTAssertEqual(condition, .cloudy)
+        XCTAssertEqual(condition.iconName(isDaylight: true), "cloud.fill")
+    }
+
+    func testWeatherConditionMappingWorksForRain() {
+        let condition = WeatherCondition(weatherCode: 61, isDaylight: true)
+
+        XCTAssertEqual(condition, .rain)
+        XCTAssertEqual(condition.iconName(isDaylight: true), "cloud.rain.fill")
+    }
+
+    func testWeatherConditionMappingWorksForSnow() {
+        let condition = WeatherCondition(weatherCode: 71, isDaylight: true)
+
+        XCTAssertEqual(condition, .snow)
+        XCTAssertEqual(condition.iconName(isDaylight: true), "cloud.snow.fill")
+    }
+
+    func testFailedNetworkResponseProducesErrorState() async {
+        let service = SequencedWeatherService(results: [
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+            .failure(.networkUnavailable),
+        ])
+        let sleepRecorder = SleepRecorder()
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: .placeholder,
+            weatherService: service,
+            refreshOnInit: false,
+            retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
+            postErrorRetryDelays: [],
+            sleep: { duration in
+                await sleepRecorder.record(duration)
+            }
+        )
+
+        await viewModel.refreshWeather()
+
+        let recordedSleeps = await sleepRecorder.values
+        XCTAssertEqual(recordedSleeps, [.seconds(10), .seconds(20), .seconds(30)])
+        XCTAssertEqual(viewModel.conditionIconName, "wifi.slash")
+        XCTAssertEqual(viewModel.temperatureText, "--")
+        XCTAssertEqual(viewModel.summaryText, "Network unavailable")
+    }
+
+    func testStaleOrMissingDataIsHandledSafely() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
+            temperature: 63.6,
+            weatherCode: 0,
+            currentTime: "2026-03-12T02:00",
+            sunrise: [],
+            sunset: []
+        ))
+
+        XCTAssertEqual(snapshot.temperature, 64)
+        XCTAssertEqual(snapshot.condition, .clear)
+        XCTAssertTrue(snapshot.isDaylight)
+        XCTAssertEqual(snapshot.summary, "Clear sky")
+    }
+
+    func testDecodeFailsForMalformedAPIResponse() {
+        let malformedData = Data("{\"timezone\":\"America/New_York\"}".utf8)
+
+        XCTAssertThrowsError(try OpenMeteoWeatherService.decodeSnapshot(from: malformedData)) { error in
+            XCTAssertEqual(error as? WeatherServiceError, .decodeFailed)
+        }
+    }
+
     func testPlaceholderTemperatureFormatsCorrectly() {
         let viewModel = makePlaceholderViewModel()
 
@@ -33,12 +173,6 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertFalse(settings.usesPlaceholderWeather)
     }
 
-    func testWeatherCodeMapsToRainCondition() {
-        let condition = WeatherCondition(weatherCode: 61, isDaylight: true)
-
-        XCTAssertEqual(condition.iconName(isDaylight: true), "cloud.rain.fill")
-    }
-
     func testClearConditionUsesMoonIconAtNight() {
         let condition = WeatherCondition(weatherCode: 0, isDaylight: false)
 
@@ -63,34 +197,6 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.isLoading)
     }
 
-    func testNetworkErrorUsesWifiSlashAfterConfiguredRetries() async {
-        let service = SequencedWeatherService(results: [
-            .failure(.networkUnavailable),
-            .failure(.networkUnavailable),
-            .failure(.networkUnavailable),
-            .failure(.networkUnavailable),
-        ])
-        var recordedSleeps: [Duration] = []
-        let viewModel = WeatherViewModel(
-            defaults: makeDefaults(),
-            snapshot: .placeholder,
-            weatherService: service,
-            refreshOnInit: false,
-            retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
-            postErrorRetryDelays: [],
-            sleep: { duration in
-                recordedSleeps.append(duration)
-            }
-        )
-
-        await viewModel.refreshWeather()
-
-        XCTAssertEqual(recordedSleeps, [.seconds(10), .seconds(20), .seconds(30)])
-        XCTAssertEqual(viewModel.conditionIconName, "wifi.slash")
-        XCTAssertEqual(viewModel.temperatureText, "--")
-        XCTAssertEqual(viewModel.summaryText, "Network unavailable")
-    }
-
     func testAPIErrorUsesCloudSlashAfterConfiguredRetries() async {
         let service = SequencedWeatherService(results: [
             .failure(.requestFailed),
@@ -98,7 +204,7 @@ final class WeatherViewModelTests: XCTestCase {
             .failure(.requestFailed),
             .failure(.requestFailed),
         ])
-        var recordedSleeps: [Duration] = []
+        let sleepRecorder = SleepRecorder()
         let viewModel = WeatherViewModel(
             defaults: makeDefaults(),
             snapshot: .placeholder,
@@ -107,12 +213,13 @@ final class WeatherViewModelTests: XCTestCase {
             retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
             postErrorRetryDelays: [],
             sleep: { duration in
-                recordedSleeps.append(duration)
+                await sleepRecorder.record(duration)
             }
         )
 
         await viewModel.refreshWeather()
 
+        let recordedSleeps = await sleepRecorder.values
         XCTAssertEqual(recordedSleeps, [.seconds(10), .seconds(20), .seconds(30)])
         XCTAssertEqual(viewModel.conditionIconName, "cloud.slash")
         XCTAssertEqual(viewModel.temperatureText, "--")
@@ -130,7 +237,7 @@ final class WeatherViewModelTests: XCTestCase {
             .failure(.networkUnavailable),
             .success(.placeholder),
         ])
-        var recordedSleeps: [Duration] = []
+        let sleepRecorder = SleepRecorder()
         let viewModel = WeatherViewModel(
             defaults: makeDefaults(),
             snapshot: .placeholder,
@@ -139,12 +246,13 @@ final class WeatherViewModelTests: XCTestCase {
             retryDelays: [.seconds(10), .seconds(20), .seconds(30)],
             postErrorRetryDelays: [.seconds(120), .seconds(180), .seconds(300)],
             sleep: { duration in
-                recordedSleeps.append(duration)
+                await sleepRecorder.record(duration)
             }
         )
 
         await viewModel.refreshWeather()
 
+        let recordedSleeps = await sleepRecorder.values
         XCTAssertEqual(
             recordedSleeps,
             [.seconds(10), .seconds(20), .seconds(30), .seconds(120), .seconds(180), .seconds(300), .seconds(300)]
@@ -169,6 +277,46 @@ final class WeatherViewModelTests: XCTestCase {
             weatherService: MockWeatherService(),
             refreshOnInit: false
         )
+    }
+
+    private func sampleResponse(
+        temperature: Double,
+        weatherCode: Int,
+        currentTime: String,
+        sunrise: [String],
+        sunset: [String],
+        timezone: String = "America/New_York"
+    ) -> Data {
+        let sunriseJSON = sunrise.map { "\"\($0)\"" }.joined(separator: ",")
+        let sunsetJSON = sunset.map { "\"\($0)\"" }.joined(separator: ",")
+        let json = """
+        {
+          "timezone": "\(timezone)",
+          "current": {
+            "time": "\(currentTime)",
+            "temperature_2m": \(temperature),
+            "weather_code": \(weatherCode)
+          },
+          "daily": {
+            "sunrise": [\(sunriseJSON)],
+            "sunset": [\(sunsetJSON)]
+          }
+        }
+        """
+
+        return Data(json.utf8)
+    }
+}
+
+private actor SleepRecorder {
+    private var durations: [Duration] = []
+
+    func record(_ duration: Duration) {
+        durations.append(duration)
+    }
+
+    var values: [Duration] {
+        durations
     }
 }
 

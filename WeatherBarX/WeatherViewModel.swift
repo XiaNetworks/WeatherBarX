@@ -83,25 +83,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             throw WeatherServiceError.requestFailed
         }
 
-        let payload: OpenMeteoForecastResponse
-        do {
-            payload = try JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data)
-        } catch {
-            throw WeatherServiceError.decodeFailed
-        }
-
-        let isDaylight = payload.isCurrentTimeInDaylight
-        let condition = WeatherCondition(
-            weatherCode: payload.current.weatherCode,
-            isDaylight: isDaylight
-        )
-
-        return WeatherSnapshot(
-            summary: condition.summary,
-            temperature: Int(payload.current.temperature.rounded()),
-            condition: condition,
-            isDaylight: isDaylight
-        )
+        return try Self.decodeSnapshot(from: data)
     }
 
     private func classify(urlError: URLError) -> WeatherServiceError {
@@ -120,9 +102,39 @@ struct OpenMeteoWeatherService: WeatherServing {
             return .requestFailed
         }
     }
+
+    static func decodeSnapshot(from data: Data) throws -> WeatherSnapshot {
+        do {
+            let payload = try decoder.decode(OpenMeteoForecastResponse.self, from: data)
+            return snapshot(from: payload)
+        } catch {
+            throw WeatherServiceError.decodeFailed
+        }
+    }
+
+    static func roundedTemperature(from temperature: Double) -> Int {
+        Int(temperature.rounded())
+    }
+
+    private static let decoder = JSONDecoder()
+
+    private static func snapshot(from payload: OpenMeteoForecastResponse) -> WeatherSnapshot {
+        let isDaylight = payload.isCurrentTimeInDaylight
+        let condition = WeatherCondition(
+            weatherCode: payload.current.weatherCode,
+            isDaylight: isDaylight
+        )
+
+        return WeatherSnapshot(
+            summary: condition.summary,
+            temperature: roundedTemperature(from: payload.current.temperature),
+            condition: condition,
+            isDaylight: isDaylight
+        )
+    }
 }
 
-private struct OpenMeteoForecastResponse: Decodable {
+struct OpenMeteoForecastResponse: Decodable {
     let timezone: String
     let current: CurrentWeather
     let daily: DailyWeather
@@ -159,6 +171,17 @@ private struct OpenMeteoForecastResponse: Decodable {
     struct DailyWeather: Decodable {
         let sunrise: [String]
         let sunset: [String]
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            sunrise = try container.decodeIfPresent([String].self, forKey: .sunrise) ?? []
+            sunset = try container.decodeIfPresent([String].self, forKey: .sunset) ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case sunrise
+            case sunset
+        }
     }
 }
 
