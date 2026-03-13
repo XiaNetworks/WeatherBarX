@@ -1,0 +1,12 @@
+{
+  "timezone": "America/New_York",
+  "current": {
+    "time": "2026-03-12T09:30",
+    "temperature_2m": 70.6,
+    "weather_code": 61
+  },
+  "daily": {
+    "sunrise": ["2026-03-12T07:15"],
+    "sunset": ["2026-03-12T19:05"]
+  }
+}

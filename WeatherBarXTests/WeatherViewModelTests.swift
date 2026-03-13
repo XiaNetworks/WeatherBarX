@@ -1,44 +1,27 @@
 import XCTest
 @testable import WeatherBarX
 
-private func sampleResponse(
-    temperature: Double,
-    weatherCode: Int,
-    currentTime: String,
-    sunrise: [String],
-    sunset: [String],
-    timezone: String = "America/New_York"
-) -> Data {
-    let sunriseJSON = sunrise.map { "\"\($0)\"" }.joined(separator: ",")
-    let sunsetJSON = sunset.map { "\"\($0)\"" }.joined(separator: ",")
-    let json = """
-    {
-      "timezone": "\(timezone)",
-      "current": {
-        "time": "\(currentTime)",
-        "temperature_2m": \(temperature),
-        "weather_code": \(weatherCode)
-      },
-      "daily": {
-        "sunrise": [\(sunriseJSON)],
-        "sunset": [\(sunsetJSON)]
-      }
-    }
-    """
+private final class FixtureBundleToken {}
 
-    return Data(json.utf8)
+private func fixture(named name: String) -> Data {
+    let bundle = Bundle(for: FixtureBundleToken.self)
+    guard let url = bundle.url(forResource: name, withExtension: "json") else {
+        XCTFail("Missing fixture: \(name).json")
+        return Data()
+    }
+
+    do {
+        return try Data(contentsOf: url)
+    } catch {
+        XCTFail("Failed to load fixture: \(name).json")
+        return Data()
+    }
 }
 
 @MainActor
 final class WeatherViewModelTests: XCTestCase {
     func testJSONResponseDecodesIntoWeatherModelCorrectly() throws {
-        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
-            temperature: 72.4,
-            weatherCode: 3,
-            currentTime: "2026-03-12T14:00",
-            sunrise: ["2026-03-12T07:15"],
-            sunset: ["2026-03-12T19:05"]
-        ))
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-cloudy-day"))
 
         XCTAssertEqual(snapshot.temperature, 72)
         XCTAssertEqual(snapshot.summary, "Cloudy")
@@ -47,39 +30,21 @@ final class WeatherViewModelTests: XCTestCase {
     }
 
     func testSunriseSunsetPayloadUsesDayIconDuringDaylight() throws {
-        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
-            temperature: 68.2,
-            weatherCode: 0,
-            currentTime: "2026-03-12T14:00",
-            sunrise: ["2026-03-12T07:15"],
-            sunset: ["2026-03-12T19:05"]
-        ))
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-clear-day"))
 
         XCTAssertTrue(snapshot.isDaylight)
         XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "sun.max.fill")
     }
 
     func testSunriseSunsetPayloadUsesNightIconAfterSunset() throws {
-        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
-            temperature: 57.9,
-            weatherCode: 0,
-            currentTime: "2026-03-12T21:00",
-            sunrise: ["2026-03-12T07:15"],
-            sunset: ["2026-03-12T19:05"]
-        ))
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-clear-night"))
 
         XCTAssertFalse(snapshot.isDaylight)
         XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "moon.stars.fill")
     }
 
     func testSunriseSunsetPayloadTreatsSunsetAsNightBoundary() throws {
-        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
-            temperature: 61.0,
-            weatherCode: 1,
-            currentTime: "2026-03-12T19:05",
-            sunrise: ["2026-03-12T07:15"],
-            sunset: ["2026-03-12T19:05"]
-        ))
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-sunset-boundary"))
 
         XCTAssertFalse(snapshot.isDaylight)
         XCTAssertEqual(snapshot.condition.iconName(isDaylight: snapshot.isDaylight), "cloud.moon.fill")
@@ -93,13 +58,7 @@ final class WeatherViewModelTests: XCTestCase {
                 httpVersion: nil,
                 headerFields: nil
             )!
-            return (.success((response, sampleResponse(
-                temperature: 70.6,
-                weatherCode: 61,
-                currentTime: "2026-03-12T09:30",
-                sunrise: ["2026-03-12T07:15"],
-                sunset: ["2026-03-12T19:05"]
-            ))))
+            return .success((response, fixture(named: "current-rain")))
         }
 
         let snapshot = try await makeWeatherService().fetchCurrentWeather(latitude: 38.9072, longitude: -77.0369)
@@ -210,13 +169,7 @@ final class WeatherViewModelTests: XCTestCase {
     }
 
     func testStaleOrMissingDataIsHandledSafely() throws {
-        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: sampleResponse(
-            temperature: 63.6,
-            weatherCode: 0,
-            currentTime: "2026-03-12T02:00",
-            sunrise: [],
-            sunset: []
-        ))
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-missing-sunrise"))
 
         XCTAssertEqual(snapshot.temperature, 64)
         XCTAssertEqual(snapshot.condition, .clear)
@@ -225,7 +178,7 @@ final class WeatherViewModelTests: XCTestCase {
     }
 
     func testDecodeFailsForMalformedAPIResponse() {
-        let malformedData = Data("{\"timezone\":\"America/New_York\"}".utf8)
+        let malformedData = fixture(named: "error-response")
 
         XCTAssertThrowsError(try OpenMeteoWeatherService.decodeSnapshot(from: malformedData)) { error in
             XCTAssertEqual(error as? WeatherServiceError, .decodeFailed)
