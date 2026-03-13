@@ -33,12 +33,17 @@ struct MenuContentView: View {
             }
             .accessibilityIdentifier("temperature-label")
 
-            Text(viewModel.dailyRangeText)
-                .font(.subheadline)
-                .foregroundColor(MenuDetailColors.detail)
-                .accessibilityIdentifier("daily-range-text")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.highDetailText)
+                    .accessibilityIdentifier("high-detail-text")
 
-            HStack(spacing: 12) {
+                Text(viewModel.lowDetailText)
+                    .accessibilityIdentifier("low-detail-text")
+            }
+            .font(.subheadline)
+            .foregroundColor(MenuDetailColors.detail)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.sunriseText)
                     .accessibilityIdentifier("sunrise-text")
 
@@ -60,6 +65,6 @@ struct MenuContentView: View {
                 .accessibilityIdentifier("quit-button")
         }
         .padding()
-        .frame(width: 260)
+        .frame(width: 280)
     }
 }

@@ -8,7 +8,9 @@ struct WeatherSnapshot: Equatable {
     let sunrise: Date?
     let sunset: Date?
     let highTemperature: Int?
+    let highTemperatureAt: Date?
     let lowTemperature: Int?
+    let lowTemperatureAt: Date?
 
     static let placeholder = WeatherSnapshot(
         summary: "Placeholder weather",
@@ -18,7 +20,9 @@ struct WeatherSnapshot: Equatable {
         sunrise: nil,
         sunset: nil,
         highTemperature: 76,
-        lowTemperature: 64
+        highTemperatureAt: nil,
+        lowTemperature: 64,
+        lowTemperatureAt: nil
     )
 
     static let networkUnavailable = WeatherSnapshot(
@@ -29,7 +33,9 @@ struct WeatherSnapshot: Equatable {
         sunrise: nil,
         sunset: nil,
         highTemperature: nil,
-        lowTemperature: nil
+        highTemperatureAt: nil,
+        lowTemperature: nil,
+        lowTemperatureAt: nil
     )
 
     static let apiUnavailable = WeatherSnapshot(
@@ -40,7 +46,9 @@ struct WeatherSnapshot: Equatable {
         sunrise: nil,
         sunset: nil,
         highTemperature: nil,
-        lowTemperature: nil
+        highTemperatureAt: nil,
+        lowTemperature: nil,
+        lowTemperatureAt: nil
     )
 }
 
@@ -90,7 +98,8 @@ struct OpenMeteoWeatherService: WeatherServing {
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
-            URLQueryItem(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min"),
+            URLQueryItem(name: "hourly", value: "temperature_2m"),
+            URLQueryItem(name: "daily", value: "sunrise,sunset"),
             URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -152,6 +161,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             weatherCode: payload.current.weatherCode,
             isDaylight: isDaylight
         )
+        let extrema = payload.hourly.dailyExtrema(in: payload.timezone)
 
         return WeatherSnapshot(
             summary: condition.summary,
@@ -160,8 +170,10 @@ struct OpenMeteoWeatherService: WeatherServing {
             isDaylight: isDaylight,
             sunrise: payload.sunriseDate,
             sunset: payload.sunsetDate,
-            highTemperature: payload.daily.temperatureMax.first.map(roundedTemperature(from:)),
-            lowTemperature: payload.daily.temperatureMin.first.map(roundedTemperature(from:))
+            highTemperature: extrema.high.map { roundedTemperature(from: $0.temperature) },
+            highTemperatureAt: extrema.high?.time,
+            lowTemperature: extrema.low.map { roundedTemperature(from: $0.temperature) },
+            lowTemperatureAt: extrema.low?.time
         )
     }
 }
@@ -169,7 +181,15 @@ struct OpenMeteoWeatherService: WeatherServing {
 struct OpenMeteoForecastResponse: Decodable {
     let timezone: String
     let current: CurrentWeather
+    let hourly: HourlyWeather
     let daily: DailyWeather
+
+    private enum CodingKeys: String, CodingKey {
+        case timezone
+        case current
+        case hourly
+        case daily
+    }
 
     var isCurrentTimeInDaylight: Bool {
         guard
@@ -215,26 +235,91 @@ struct OpenMeteoForecastResponse: Decodable {
         }
     }
 
+    struct HourlyWeather: Decodable {
+        struct Entry: Equatable {
+            let time: Date
+            let temperature: Double
+        }
+
+        let time: [String]
+        let temperature: [Double]
+
+        func dailyExtrema(in timezone: String) -> (high: Entry?, low: Entry?) {
+            let entries = parsedEntries(in: timezone)
+            guard let first = entries.first else {
+                return (nil, nil)
+            }
+
+            var high = first
+            var low = first
+
+            for entry in entries.dropFirst() {
+                if entry.temperature > high.temperature {
+                    high = entry
+                }
+                if entry.temperature < low.temperature {
+                    low = entry
+                }
+            }
+
+            return (high, low)
+        }
+
+        private func parsedEntries(in timezone: String) -> [Entry] {
+            zip(time, temperature).compactMap { rawTime, value in
+                guard let date = OpenMeteoForecastResponse.localDate(from: rawTime, timezone: timezone) else {
+                    return nil
+                }
+                return Entry(time: date, temperature: value)
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            time = try container.decodeIfPresent([String].self, forKey: .time) ?? []
+            temperature = try container.decodeIfPresent([Double].self, forKey: .temperature) ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case time
+            case temperature = "temperature_2m"
+        }
+    }
+
     struct DailyWeather: Decodable {
         let sunrise: [String]
         let sunset: [String]
-        let temperatureMax: [Double]
-        let temperatureMin: [Double]
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             sunrise = try container.decodeIfPresent([String].self, forKey: .sunrise) ?? []
             sunset = try container.decodeIfPresent([String].self, forKey: .sunset) ?? []
-            temperatureMax = try container.decodeIfPresent([Double].self, forKey: .temperatureMax) ?? []
-            temperatureMin = try container.decodeIfPresent([Double].self, forKey: .temperatureMin) ?? []
         }
 
         private enum CodingKeys: String, CodingKey {
             case sunrise
             case sunset
-            case temperatureMax = "temperature_2m_max"
-            case temperatureMin = "temperature_2m_min"
         }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        timezone = try container.decode(String.self, forKey: .timezone)
+        current = try container.decode(CurrentWeather.self, forKey: .current)
+        hourly = try container.decode(HourlyWeather.self, forKey: .hourly)
+        daily = try container.decode(DailyWeather.self, forKey: .daily)
+    }
+
+    private static func localDate(from value: String?, timezone: String) -> Date? {
+        guard let value else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        formatter.timeZone = TimeZone(identifier: timezone)
+        return formatter.date(from: value)
     }
 }
 
@@ -315,14 +400,20 @@ final class WeatherViewModel: ObservableObject {
         snapshot.condition.iconName(isDaylight: snapshot.isDaylight)
     }
 
-    var dailyRangeText: String {
+    var highDetailText: String {
         if isLoading {
-            return "H: --  L: --"
+            return "High: -- at --"
         }
 
-        let high = formatTemperature(snapshot.highTemperature)
-        let low = formatTemperature(snapshot.lowTemperature)
-        return "H: \(high)  L: \(low)"
+        return "High: \(formatTemperature(snapshot.highTemperature)) at \(formatTime(snapshot.highTemperatureAt))"
+    }
+
+    var lowDetailText: String {
+        if isLoading {
+            return "Low: -- at --"
+        }
+
+        return "Low: \(formatTemperature(snapshot.lowTemperature)) at \(formatTime(snapshot.lowTemperatureAt))"
     }
 
     var sunriseText: String {

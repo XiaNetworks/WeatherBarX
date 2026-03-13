@@ -33,7 +33,9 @@ final class WeatherViewModelTests: XCTestCase {
         formatter.dateFormat = "h:mm a"
 
         XCTAssertEqual(snapshot.highTemperature, 76)
+        XCTAssertEqual(snapshot.highTemperatureAt.map(formatter.string(from:)), "3:00 PM")
         XCTAssertEqual(snapshot.lowTemperature, 61)
+        XCTAssertEqual(snapshot.lowTemperatureAt.map(formatter.string(from:)), "3:00 AM")
         XCTAssertEqual(snapshot.sunrise.map(formatter.string(from:)), "7:15 AM")
         XCTAssertEqual(snapshot.sunset.map(formatter.string(from:)), "7:05 PM")
     }
@@ -205,7 +207,8 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.conditionIconName, "sun.max.fill")
         XCTAssertEqual(viewModel.temperatureText, "72°")
-        XCTAssertEqual(viewModel.dailyRangeText, "H: 76°  L: 64°")
+        XCTAssertEqual(viewModel.highDetailText, "High: 76° at --")
+        XCTAssertEqual(viewModel.lowDetailText, "Low: 64° at --")
     }
 
     func testPlaceholderConditionMapsToCorrectIconName() {
@@ -250,6 +253,19 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: --")
     }
 
+    func testHourlyExtremaUseHourlyTemperatureTimes() throws {
+        let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-rain"))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "h:mm a"
+
+        XCTAssertEqual(snapshot.highTemperature, 75)
+        XCTAssertEqual(snapshot.highTemperatureAt.map(formatter.string(from:)), "3:00 PM")
+        XCTAssertEqual(snapshot.lowTemperature, 63)
+        XCTAssertEqual(snapshot.lowTemperatureAt.map(formatter.string(from:)), "3:00 AM")
+    }
+
     func testWeatherDetailTextFormatsSunriseSunsetAndRange() throws {
         let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-rain"))
         let viewModel = WeatherViewModel(
@@ -263,7 +279,8 @@ final class WeatherViewModelTests: XCTestCase {
         formatter.timeZone = TimeZone(identifier: "America/New_York")
         formatter.dateFormat = "h:mm a"
 
-        XCTAssertEqual(viewModel.dailyRangeText, "H: 75°  L: 63°")
+        XCTAssertEqual(normalizedWhitespace(viewModel.highDetailText), "High: 75° at 3:00 PM")
+        XCTAssertEqual(normalizedWhitespace(viewModel.lowDetailText), "Low: 63° at 3:00 AM")
         XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: 7:15 AM")
         XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: 7:05 PM")
     }
@@ -314,7 +331,8 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.summaryText, "Loading weather...")
         XCTAssertEqual(viewModel.temperatureText, "--")
-        XCTAssertEqual(viewModel.dailyRangeText, "H: --  L: --")
+        XCTAssertEqual(viewModel.highDetailText, "High: -- at --")
+        XCTAssertEqual(viewModel.lowDetailText, "Low: -- at --")
         XCTAssertEqual(viewModel.sunriseText, "Sunrise: --")
         XCTAssertEqual(viewModel.sunsetText, "Sunset: --")
     }
@@ -328,7 +346,9 @@ final class WeatherViewModelTests: XCTestCase {
             sunrise: nil,
             sunset: nil,
             highTemperature: 70,
-            lowTemperature: 55
+            highTemperatureAt: nil,
+            lowTemperature: 55,
+            lowTemperatureAt: nil
         )
         let service = GatedWeatherService()
         let viewModel = WeatherViewModel(
@@ -381,7 +401,9 @@ final class WeatherViewModelTests: XCTestCase {
             sunrise: nil,
             sunset: nil,
             highTemperature: 70,
-            lowTemperature: 55
+            highTemperatureAt: nil,
+            lowTemperature: 55,
+            lowTemperatureAt: nil
         )
         let service = SequencedWeatherService(results: [
             .success(updatedSnapshot),
@@ -639,6 +661,10 @@ private func XCTAssertThrowsErrorAsync<T>(
     } catch {
         errorHandler(error)
     }
+}
+
+private func normalizedWhitespace(_ value: String) -> String {
+    value.replacingOccurrences(of: "\u{202F}", with: " ")
 }
 
 @MainActor
