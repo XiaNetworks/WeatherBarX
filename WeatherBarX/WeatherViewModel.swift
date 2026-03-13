@@ -64,7 +64,7 @@ struct OpenMeteoWeatherService: WeatherServing {
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,weather_code,time"),
+            URLQueryItem(name: "current", value: "temperature_2m,weather_code"),
             URLQueryItem(name: "daily", value: "sunrise,sunset"),
             URLQueryItem(name: "forecast_days", value: "1"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
@@ -123,12 +123,15 @@ struct OpenMeteoWeatherService: WeatherServing {
 }
 
 private struct OpenMeteoForecastResponse: Decodable {
+    let timezone: String
     let current: CurrentWeather
     let daily: DailyWeather
 
     var isCurrentTimeInDaylight: Bool {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        formatter.timeZone = TimeZone(identifier: timezone)
 
         guard
             let currentDate = formatter.date(from: current.time),
@@ -142,14 +145,14 @@ private struct OpenMeteoForecastResponse: Decodable {
     }
 
     struct CurrentWeather: Decodable {
+        let time: String
         let temperature: Double
         let weatherCode: Int
-        let time: String
 
         enum CodingKeys: String, CodingKey {
+            case time
             case temperature = "temperature_2m"
             case weatherCode = "weather_code"
-            case time
         }
     }
 
