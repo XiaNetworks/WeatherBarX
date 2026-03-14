@@ -17,6 +17,7 @@ env:
   APP_NAME: WeatherBarX
   TAP_REPO: XiaNetworks/homebrew-tap
   TAP_CASK_PATH: Casks/weatherbarx.rb
+  TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
 jobs:
   release:
@@ -83,15 +84,15 @@ jobs:
           path: dist/weatherbarx.rb
 
       - name: Checkout tap repository
-        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        if: ${{ env.TAP_GITHUB_TOKEN != '' }}
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TAP_REPO }}
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          token: ${{ env.TAP_GITHUB_TOKEN }}
           path: homebrew-tap
 
       - name: Update tap cask
-        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        if: ${{ env.TAP_GITHUB_TOKEN != '' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/${{ env.APP_NAME }}.zip
