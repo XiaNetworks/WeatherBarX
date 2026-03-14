@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: WeatherBarX
+  TAP_REPO: XiaNetworks/homebrew-tap
+  TAP_CASK_PATH: Casks/weatherbarx.rb
+
+jobs:
+  release:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            VERSION="${INPUT_VERSION}"
+            TAG="v${VERSION}"
+          fi
+
+          if [ -z "${VERSION}" ]; then
+            echo "Release version is required." >&2
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release archive
+        run: ./scripts/create-release-archive.sh "${{ steps.version.outputs.version }}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1 || \
+            gh release create "${{ steps.version.outputs.tag }}" \
+              "dist/${APP_NAME}.zip" \
+              --title "${APP_NAME} ${{ steps.version.outputs.version }}" \
+              --notes "Release ${{ steps.version.outputs.version }}"
+
+          gh release upload "${{ steps.version.outputs.tag }}" \
+            "dist/${APP_NAME}.zip" \
+            --clobber
+
+      - name: Generate Homebrew cask
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/${{ env.APP_NAME }}.zip
+        run: |
+          SHA256="$(cat dist/${APP_NAME}.zip.sha256)"
+          ./scripts/render-homebrew-cask.sh "${VERSION}" "${SHA256}" "${URL}" > dist/weatherbarx.rb
+
+      - name: Upload cask artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-cask
+          path: dist/weatherbarx.rb
+
+      - name: Checkout tap repository
+        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_REPO }}
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update tap cask
+        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/${{ env.APP_NAME }}.zip
+        run: |
+          SHA256="$(cat dist/${APP_NAME}.zip.sha256)"
+          mkdir -p "$(dirname "homebrew-tap/${TAP_CASK_PATH}")"
+          ./scripts/render-homebrew-cask.sh "${VERSION}" "${SHA256}" "${URL}" > "homebrew-tap/${TAP_CASK_PATH}"
+
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${TAP_CASK_PATH}"
+
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+
+          git commit -m "weatherbarx ${VERSION}"
+          git push
+
+      - name: Write job summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/${{ env.APP_NAME }}.zip
+        run: |
+          {
+            echo "## Release outputs"
+            echo
+            echo "- Version: ${VERSION}"
+            echo "- Archive: ${URL}"
+            echo "- SHA256: $(cat dist/${APP_NAME}.zip.sha256)"
+            echo "- Cask artifact: dist/weatherbarx.rb"
+          } >> "$GITHUB_STEP_SUMMARY"

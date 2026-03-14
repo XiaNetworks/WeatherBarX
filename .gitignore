@@ -3,6 +3,7 @@
 .build/
 build/
 DerivedData/
+dist/
 
 *.xcuserstate
 *.xcworkspace/xcuserdata/
