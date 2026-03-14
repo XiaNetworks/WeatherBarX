@@ -77,6 +77,9 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.temperature, 71)
         XCTAssertEqual(snapshot.condition, .rain)
         XCTAssertEqual(snapshot.summary, "Rain")
+        XCTAssertEqual(snapshot.windSpeed, 12)
+        XCTAssertEqual(snapshot.humidity, 68)
+        XCTAssertEqual(snapshot.precipitationChance, 55)
         XCTAssertTrue(snapshot.isDaylight)
     }
 
@@ -471,6 +474,7 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "72°")
         XCTAssertEqual(viewModel.highDetailText, "High: 76° at --")
         XCTAssertEqual(viewModel.lowDetailText, "Low: 64° at --")
+        XCTAssertEqual(viewModel.windInlineText, "--")
 
         viewModel.toggleTemperatureUnit()
 
@@ -478,6 +482,7 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureText, "22°")
         XCTAssertEqual(viewModel.highDetailText, "High: 24° at --")
         XCTAssertEqual(viewModel.lowDetailText, "Low: 18° at --")
+        XCTAssertEqual(viewModel.windInlineText, "--")
     }
 
     func testPlaceholderStateProducesExpectedStatusItemValues() {
@@ -520,9 +525,11 @@ final class WeatherViewModelTests: XCTestCase {
         await taskBox.task?.value
 
         XCTAssertFalse(viewModel.isRefreshButtonEnabled)
+        XCTAssertEqual(viewModel.refreshButtonHelpText(at: clock.current), "Refresh available in 60 seconds.")
 
         clock.current = clock.current.addingTimeInterval(60)
         XCTAssertTrue(viewModel.isRefreshButtonEnabled)
+        XCTAssertEqual(viewModel.refreshButtonHelpText(at: clock.current), "Refresh weather")
     }
 
     func testLastCheckTextFormatsUsingRecordedCheckTime() async {
@@ -560,6 +567,12 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.formatLastCheckText(referenceDate: fixedDate.addingTimeInterval(90), using: formatter), "Last checked: \(formatter.string(from: fixedDate))")
         XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: --")
         XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: --")
+        XCTAssertEqual(viewModel.formatHumidityText(), "Humidity: --")
+        XCTAssertEqual(viewModel.formatPrecipitationText(), "Precipitation: --")
+        XCTAssertEqual(viewModel.formatWindText(), "Wind: --")
+        XCTAssertEqual(viewModel.windInlineText, "--")
+        XCTAssertEqual(viewModel.precipitationInlineText, "--")
+        XCTAssertEqual(viewModel.humidityInlineText, "--")
     }
 
     func testHourlyExtremaUseHourlyTemperatureTimes() throws {
@@ -573,6 +586,9 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.highTemperatureAt.map(formatter.string(from:)), "3:00 PM")
         XCTAssertEqual(snapshot.lowTemperature, 63)
         XCTAssertEqual(snapshot.lowTemperatureAt.map(formatter.string(from:)), "3:00 AM")
+        XCTAssertEqual(snapshot.windSpeed, 12)
+        XCTAssertEqual(snapshot.humidity, 68)
+        XCTAssertEqual(snapshot.precipitationChance, 55)
     }
 
     func testWeatherDetailTextFormatsSunriseSunsetAndRange() throws {
@@ -592,6 +608,21 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(normalizedWhitespace(viewModel.lowDetailText), "Low: 63° at 3:00 AM")
         XCTAssertEqual(viewModel.formatSunriseText(using: formatter), "Sunrise: 7:15 AM")
         XCTAssertEqual(viewModel.formatSunsetText(using: formatter), "Sunset: 7:05 PM")
+        XCTAssertEqual(viewModel.humidityText, "Humidity: 68%")
+        XCTAssertEqual(viewModel.precipitationText, "Precipitation: 55%")
+        XCTAssertEqual(viewModel.windText, "Wind: 12 mph")
+        XCTAssertEqual(viewModel.windInlineText, "12 mph")
+        XCTAssertEqual(viewModel.precipitationInlineText, "55%")
+        XCTAssertEqual(viewModel.humidityInlineText, "68%")
+
+        viewModel.toggleTemperatureUnit()
+
+        XCTAssertEqual(viewModel.windText, "Wind: 19 km/h")
+        XCTAssertEqual(viewModel.windInlineText, "19 km/h")
+        XCTAssertEqual(viewModel.humidityText, "Humidity: 68%")
+        XCTAssertEqual(viewModel.precipitationText, "Precipitation: 55%")
+        XCTAssertEqual(viewModel.precipitationInlineText, "55%")
+        XCTAssertEqual(viewModel.humidityInlineText, "68%")
     }
 
     func testSettingsDefaultsLoadCorrectly() {
@@ -649,6 +680,12 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lowDetailText, "Low: -- at --")
         XCTAssertEqual(viewModel.sunriseText, "Sunrise: --")
         XCTAssertEqual(viewModel.sunsetText, "Sunset: --")
+        XCTAssertEqual(viewModel.humidityText, "Humidity: --")
+        XCTAssertEqual(viewModel.precipitationText, "Precipitation: --")
+        XCTAssertEqual(viewModel.windText, "Wind: --")
+        XCTAssertEqual(viewModel.windInlineText, "--")
+        XCTAssertEqual(viewModel.precipitationInlineText, "--")
+        XCTAssertEqual(viewModel.humidityInlineText, "--")
     }
 
     func testRefreshUpdatesViewModelStateFromLoadingToSuccess() async {

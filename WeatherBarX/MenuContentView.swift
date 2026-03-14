@@ -348,7 +348,33 @@ struct MenuContentView: View {
                         Text("Loading")
                     }
                 } else {
-                    Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
+                    HStack(spacing: 10) {
+                        Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
+
+                        Divider()
+                            .frame(height: 18)
+
+                        HStack(spacing: 3) {
+                            Image(systemName: "wind")
+                            Text(viewModel.windInlineText)
+                        }
+                        .foregroundStyle(.secondary)
+                        .help("Wind")
+
+                        HStack(spacing: 3) {
+                            Image(systemName: "umbrella.fill")
+                            Text(viewModel.precipitationInlineText)
+                        }
+                        .foregroundStyle(.secondary)
+                        .help("Precipitation")
+
+                        HStack(spacing: 3) {
+                            Image(systemName: "humidity.fill")
+                            Text(viewModel.humidityInlineText)
+                        }
+                        .foregroundStyle(.secondary)
+                        .help("Humidity")
+                    }
                 }
             }
             .accessibilityIdentifier("temperature-label")
@@ -383,6 +409,7 @@ struct MenuContentView: View {
                     text: viewModel.sunsetText,
                     accessibilityIdentifier: "sunset-text"
                 )
+
             }
             .font(.subheadline)
             .foregroundColor(MenuDetailColors.detail)
@@ -405,32 +432,44 @@ struct MenuContentView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!viewModel.isRefreshButtonEnabled(at: context.date))
-                    .help("Refresh weather")
+                    .help(viewModel.refreshButtonHelpText(at: context.date))
                     .accessibilityIdentifier("refresh-button")
                 }
             }
 
             Divider()
 
-            HStack(spacing: 8) {
-                Button("Quit", action: onQuit)
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Button(action: onQuit) {
+                        HStack(spacing: 8) {
+                            Text("Quit")
+                            Text("⌘Q")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
                     .keyboardShortcut("q")
                     .accessibilityIdentifier("quit-button")
-
-                Spacer()
-
-                Button(action: viewModel.toggleLaunchAtLogin) {
-                    Label(viewModel.launchAtLoginButtonText, systemImage: viewModel.isLaunchAtLoginEnabled ? "checkmark.circle.fill" : "circle")
-                        .labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityIdentifier("launch-at-login-button")
 
-                Button(viewModel.temperatureUnitButtonText, action: viewModel.toggleTemperatureUnit)
+                Divider()
+                    .frame(height: 24)
+
+                HStack(spacing: 8) {
+                    Button(action: viewModel.toggleLaunchAtLogin) {
+                        Label(viewModel.launchAtLoginButtonText, systemImage: viewModel.isLaunchAtLoginEnabled ? "checkmark.circle.fill" : "circle")
+                            .labelStyle(.titleAndIcon)
+                    }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .accessibilityIdentifier("temperature-unit-button")
+                    .accessibilityIdentifier("launch-at-login-button")
+
+                    Button(viewModel.temperatureUnitButtonText, action: viewModel.toggleTemperatureUnit)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("temperature-unit-button")
+                }
             }
         }
         .padding()
