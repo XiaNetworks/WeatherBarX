@@ -7,6 +7,7 @@ struct WeatherSnapshot: Codable, Equatable {
     let temperature: Int?
     let condition: WeatherCondition
     let isDaylight: Bool
+    let timezoneIdentifier: String?
     let sunrise: Date?
     let sunset: Date?
     let highTemperature: Int?
@@ -22,6 +23,7 @@ struct WeatherSnapshot: Codable, Equatable {
         temperature: Int?,
         condition: WeatherCondition,
         isDaylight: Bool,
+        timezoneIdentifier: String? = nil,
         sunrise: Date?,
         sunset: Date?,
         highTemperature: Int?,
@@ -36,6 +38,7 @@ struct WeatherSnapshot: Codable, Equatable {
         self.temperature = temperature
         self.condition = condition
         self.isDaylight = isDaylight
+        self.timezoneIdentifier = timezoneIdentifier
         self.sunrise = sunrise
         self.sunset = sunset
         self.highTemperature = highTemperature
@@ -221,6 +224,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             temperature: roundedTemperature(from: payload.current.temperature),
             condition: condition,
             isDaylight: isDaylight,
+            timezoneIdentifier: payload.timezone,
             sunrise: payload.sunriseDate,
             sunset: payload.sunsetDate,
             highTemperature: extrema.high.map { roundedTemperature(from: $0.temperature) },
@@ -950,7 +954,7 @@ final class WeatherViewModel: ObservableObject {
             return "Last checked: <1 min ago"
         }
 
-        let formatter = formatter ?? Self.timeFormatter
+        let formatter = formatter ?? Self.makeTimeFormatter(timeZoneIdentifier: nil)
         return "Last checked: \(formatter.string(from: lastCheckAt))"
     }
 
@@ -1232,14 +1236,18 @@ final class WeatherViewModel: ObservableObject {
             return "--"
         }
 
-        let formatter = formatter ?? Self.timeFormatter
+        let formatter = formatter ?? Self.makeTimeFormatter(timeZoneIdentifier: snapshot.timezoneIdentifier)
         return formatter.string(from: value)
     }
 
-    private static let timeFormatter: DateFormatter = {
+    private static func makeTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
         let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
         formatter.timeStyle = .short
         formatter.dateStyle = .none
+        if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            formatter.timeZone = timeZone
+        }
         return formatter
-    }()
+    }
 }
