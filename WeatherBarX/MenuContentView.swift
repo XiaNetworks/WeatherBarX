@@ -78,8 +78,29 @@ private struct TemperatureUnitToggleLabel: View {
     }
 }
 
-private struct TemperatureTrendChartView: View {
-    @Binding var isShowingDetails: Bool
+private struct WeatherCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            content
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+private struct TemperatureTrendCardModel {
     let points: [WeatherViewModel.TemperatureChartPoint]
     let high: Int?
     let highAt: Date?
@@ -96,30 +117,112 @@ private struct TemperatureTrendChartView: View {
     let lowDetailText: String
     let sunriseText: String
     let sunsetText: String
+}
+
+private struct TemperatureTrendCardView: View {
+    @Binding var isShowingDetails: Bool
+    let model: TemperatureTrendCardModel
+
+    var body: some View {
+        WeatherCard(title: "Temperature Trend") {
+            TemperatureTrendChartContentView(model: model)
+
+            TemperatureTrendDetailsView(
+                isExpanded: $isShowingDetails,
+                highDetailText: model.highDetailText,
+                lowDetailText: model.lowDetailText,
+                sunriseText: model.sunriseText,
+                sunsetText: model.sunsetText
+            )
+        }
+    }
+}
+
+private struct TemperatureTrendDetailsView: View {
+    @Binding var isExpanded: Bool
+    let highDetailText: String
+    let lowDetailText: String
+    let sunriseText: String
+    let sunsetText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                isExpanded.toggle()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                    Text("Details")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        DetailRow(
+                            iconName: "thermometer.high",
+                            text: highDetailText,
+                            accessibilityIdentifier: "high-detail-text"
+                        )
+
+                        DetailRow(
+                            iconName: "thermometer.low",
+                            text: lowDetailText,
+                            accessibilityIdentifier: "low-detail-text"
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        DetailRow(
+                            iconName: "sunrise",
+                            text: sunriseText,
+                            accessibilityIdentifier: "sunrise-text"
+                        )
+
+                        DetailRow(
+                            iconName: "sunset.fill",
+                            text: sunsetText,
+                            accessibilityIdentifier: "sunset-text"
+                        )
+                    }
+                }
+                .font(.subheadline)
+                .foregroundColor(MenuDetailColors.detail)
+                .padding(.top, 4)
+            }
+        }
+        .accessibilityIdentifier("weather-details-disclosure")
+    }
+}
+
+private struct TemperatureTrendChartContentView: View {
+    let model: TemperatureTrendCardModel
     private let hourMarkOffsets = [0, 3, 6, 9, 12, 15, 18, 21, 24]
     @State private var plotFrame: CGRect = .zero
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Temperature Trend")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        VStack(alignment: .leading, spacing: 6) {
             topMarkerRow
 
             Chart {
-                TemperatureHourGridMarks(hours: xAxisMarkValues, yDomain: yDomain)
+                TemperatureHourGridMarks(hours: xAxisMarkValues, yDomain: model.yDomain)
                 TemperatureLineMarks(
-                    points: points,
-                    high: high,
-                    highAt: highAt,
-                    low: low,
-                    lowAt: lowAt,
-                    valueText: valueText
+                    points: model.points,
+                    high: model.high,
+                    highAt: model.highAt,
+                    low: model.low,
+                    lowAt: model.lowAt,
+                    valueText: model.valueText
                 )
                 TemperatureTimeMarkerMarks(
-                    markers: markers,
-                    yDomain: yDomain
+                    markers: model.markers,
+                    yDomain: model.yDomain
                 )
             }
             .chartPlotStyle { plotArea in
@@ -128,10 +231,10 @@ private struct TemperatureTrendChartView: View {
                     .border(Color.primary.opacity(0.2), width: 1)
                     .clipped()
             }
-            .ifLet(xDomain) { chart, domain in
+            .ifLet(model.xDomain) { chart, domain in
                 chart.chartXScale(domain: domain)
             }
-            .ifLet(yDomain) { chart, domain in
+            .ifLet(model.yDomain) { chart, domain in
                 chart.chartYScale(domain: domain)
             }
             .chartBackground { chartProxy in
@@ -155,7 +258,7 @@ private struct TemperatureTrendChartView: View {
                     AxisTick()
                     AxisValueLabel {
                         if let temperature = axisTemperature(from: value) {
-                            Text(valueText(temperature))
+                            Text(model.valueText(temperature))
                                 .font(.system(size: 9))
                         }
                     }
@@ -164,67 +267,7 @@ private struct TemperatureTrendChartView: View {
             .frame(height: 44)
 
             hourLabelRow
-
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: {
-                    isShowingDetails.toggle()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isShowingDetails ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                        Text("Details")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if isShowingDetails {
-                    VStack(alignment: .leading, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            DetailRow(
-                                iconName: "thermometer.high",
-                                text: highDetailText,
-                                accessibilityIdentifier: "high-detail-text"
-                            )
-
-                            DetailRow(
-                                iconName: "thermometer.low",
-                                text: lowDetailText,
-                                accessibilityIdentifier: "low-detail-text"
-                            )
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            DetailRow(
-                                iconName: "sunrise",
-                                text: sunriseText,
-                                accessibilityIdentifier: "sunrise-text"
-                            )
-
-                            DetailRow(
-                                iconName: "sunset.fill",
-                                text: sunsetText,
-                                accessibilityIdentifier: "sunset-text"
-                            )
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(MenuDetailColors.detail)
-                    .padding(.top, 4)
-                }
-            }
-            .accessibilityIdentifier("weather-details-disclosure")
         }
-        .padding(8)
-        .background(Color.primary.opacity(0.035))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
     }
 
     private var topMarkerRow: some View {
@@ -234,12 +277,12 @@ private struct TemperatureTrendChartView: View {
             let usableWidth = plotFrame == .zero ? max(0, geometry.size.width - fallbackLeftInset - 4) : plotFrame.width
 
             ZStack(alignment: .topLeading) {
-                ForEach(markers.filter { $0.kind != .current }) { marker in
+                ForEach(model.markers.filter { $0.kind != .current }) { marker in
                     if let xPosition = xPosition(for: marker.time) {
                         HStack(spacing: 3) {
                             Image(systemName: marker.kind == .sunrise ? "sunrise" : "sunset.fill")
                                 .font(.system(size: 8, weight: .semibold))
-                            Text(markerTimeText(marker.time))
+                            Text(model.markerTimeText(marker.time))
                                 .font(.caption2)
                         }
                         .foregroundStyle(.primary)
@@ -253,7 +296,7 @@ private struct TemperatureTrendChartView: View {
                             Capsule()
                                 .stroke(markerColor(for: marker).opacity(0.55), lineWidth: 1)
                         )
-                        .help(markerLabelText(marker))
+                        .help(model.markerLabelText(marker))
                         .fixedSize()
                         .position(x: leftInset + usableWidth * xPosition, y: 6)
                     }
@@ -264,7 +307,7 @@ private struct TemperatureTrendChartView: View {
     }
 
     private var xAxisMarkValues: [Date] {
-        guard let xDomain else {
+        guard let xDomain = model.xDomain else {
             return []
         }
 
@@ -287,7 +330,7 @@ private struct TemperatureTrendChartView: View {
 
             ZStack(alignment: .topLeading) {
                 ForEach(Array(xAxisMarkValues.enumerated()), id: \.offset) { index, date in
-                    Text(hourLabelText(date))
+                    Text(model.hourLabelText(date))
                         .font(.caption2)
                         .foregroundStyle(labelOpacity(for: index) == 0 ? .clear : .secondary)
                         .opacity(labelOpacity(for: index))
@@ -311,7 +354,7 @@ private struct TemperatureTrendChartView: View {
     }
 
     private func xPosition(for date: Date) -> CGFloat? {
-        guard let xDomain else {
+        guard let xDomain = model.xDomain else {
             return nil
         }
 
@@ -354,7 +397,6 @@ private struct TemperatureTrendChartView: View {
             return Color.indigo.opacity(0.55)
         }
     }
-
 }
 
 private struct TemperatureHourGridMarks: ChartContent {
@@ -911,24 +953,26 @@ struct MenuContentView: View {
             if !viewModel.temperatureChartPoints.isEmpty {
                 Divider()
 
-                TemperatureTrendChartView(
+                TemperatureTrendCardView(
                     isShowingDetails: $isShowingWeatherDetails,
-                    points: viewModel.temperatureChartPoints,
-                    high: viewModel.temperatureChartHigh,
-                    highAt: viewModel.temperatureChartHighAt,
-                    low: viewModel.temperatureChartLow,
-                    lowAt: viewModel.temperatureChartLowAt,
-                    markers: viewModel.temperatureChartTimeMarkers,
-                    xDomain: viewModel.temperatureChartXDomain,
-                    yDomain: viewModel.temperatureChartYDomain,
-                    valueText: viewModel.temperatureChartValueText(_:),
-                    markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
-                    markerTimeText: viewModel.temperatureChartTimeText(_:),
-                    hourLabelText: viewModel.temperatureChartHourLabelText(_:),
-                    highDetailText: viewModel.highDetailText,
-                    lowDetailText: viewModel.lowDetailText,
-                    sunriseText: viewModel.sunriseText,
-                    sunsetText: viewModel.sunsetText
+                    model: TemperatureTrendCardModel(
+                        points: viewModel.temperatureChartPoints,
+                        high: viewModel.temperatureChartHigh,
+                        highAt: viewModel.temperatureChartHighAt,
+                        low: viewModel.temperatureChartLow,
+                        lowAt: viewModel.temperatureChartLowAt,
+                        markers: viewModel.temperatureChartTimeMarkers,
+                        xDomain: viewModel.temperatureChartXDomain,
+                        yDomain: viewModel.temperatureChartYDomain,
+                        valueText: viewModel.temperatureChartValueText(_:),
+                        markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
+                        markerTimeText: viewModel.temperatureChartTimeText(_:),
+                        hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                        highDetailText: viewModel.highDetailText,
+                        lowDetailText: viewModel.lowDetailText,
+                        sunriseText: viewModel.sunriseText,
+                        sunsetText: viewModel.sunsetText
+                    )
                 )
                     .id(viewModel.temperatureUnit)
                     .accessibilityIdentifier("temperature-trend-chart")
