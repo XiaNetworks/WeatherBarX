@@ -571,6 +571,75 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.temperatureChartLowAt, lowTime)
     }
 
+    func testTodayAndNext24HourTemperatureChartsUseDifferentRanges() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+
+        let todayEarly = formatter.date(from: "2024-11-11 00:00")!
+        let currentTime = formatter.date(from: "2024-11-11 14:00")!
+        let todayLate = formatter.date(from: "2024-11-11 23:00")!
+        let tomorrowMorning = formatter.date(from: "2024-11-12 08:00")!
+        let tomorrowNoon = formatter.date(from: "2024-11-12 12:00")!
+        let tomorrowLate = formatter.date(from: "2024-11-12 15:00")!
+        let nextSunrise = formatter.date(from: "2024-11-12 07:00")!
+        let nextSunset = formatter.date(from: "2024-11-12 17:00")!
+
+        let snapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 72,
+            condition: .cloudy,
+            isDaylight: true,
+            timezoneIdentifier: "America/New_York",
+            currentObservationTime: currentTime,
+            sunrise: formatter.date(from: "2024-11-11 06:45"),
+            sunset: formatter.date(from: "2024-11-11 17:05"),
+            sunriseTimes: [
+                formatter.date(from: "2024-11-11 06:45")!,
+                nextSunrise,
+            ],
+            sunsetTimes: [
+                formatter.date(from: "2024-11-11 17:05")!,
+                nextSunset,
+            ],
+            highTemperature: 76,
+            highTemperatureAt: todayLate,
+            lowTemperature: 64,
+            lowTemperatureAt: todayEarly,
+            hourlyTemperatures: [
+                .init(time: todayEarly, temperature: 64),
+                .init(time: currentTime, temperature: 72),
+                .init(time: todayLate, temperature: 76),
+                .init(time: tomorrowMorning, temperature: 67),
+                .init(time: tomorrowNoon, temperature: 70),
+                .init(time: tomorrowLate, temperature: 73),
+            ]
+        )
+
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertEqual(viewModel.temperatureChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 00:00"))
+        XCTAssertEqual(viewModel.temperatureChartXDomain?.upperBound, formatter.date(from: "2024-11-12 00:00"))
+        XCTAssertEqual(viewModel.temperatureChartPoints.map(\.time), [todayEarly, currentTime, todayLate])
+        XCTAssertEqual(viewModel.next24HourTemperatureChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 12:00"))
+        XCTAssertEqual(viewModel.next24HourTemperatureChartXDomain?.upperBound, formatter.date(from: "2024-11-12 12:00"))
+        XCTAssertEqual(viewModel.next24HourTemperatureChartPoints.map(\.time), [currentTime, todayLate, tomorrowMorning, tomorrowNoon])
+        XCTAssertEqual(viewModel.next24HourTemperatureChartHigh, 76)
+        XCTAssertEqual(viewModel.next24HourTemperatureChartHighAt, todayLate)
+        XCTAssertEqual(viewModel.next24HourTemperatureChartLow, 67)
+        XCTAssertEqual(viewModel.next24HourTemperatureChartLowAt, tomorrowMorning)
+        XCTAssertEqual(
+            viewModel.next24HourTemperatureChartTimeMarkers.map(\.time),
+            [currentTime, formatter.date(from: "2024-11-11 17:05")!, nextSunrise]
+        )
+    }
+
     func testTemperatureChartLabelAlignmentUsesLeadingNearLeftEdge() {
         let alignment = TemperatureChartLabelAlignmentResolver.alignment(
             forRunStartingAt: 0,

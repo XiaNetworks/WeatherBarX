@@ -84,9 +84,11 @@ private struct WeatherCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            if !title.isEmpty {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
 
             content
         }
@@ -101,6 +103,7 @@ private struct WeatherCard<Content: View>: View {
 }
 
 private struct TemperatureTrendCardModel {
+    let title: String
     let points: [WeatherViewModel.TemperatureChartPoint]
     let high: Int?
     let highAt: Date?
@@ -113,28 +116,88 @@ private struct TemperatureTrendCardModel {
     let markerLabelText: (WeatherViewModel.TimeMarker) -> String
     let markerTimeText: (Date) -> String
     let hourLabelText: (Date) -> String
+    let timeZoneIdentifier: String?
+    let details: TemperatureTrendDetailsModel?
+}
+
+private struct TemperatureTrendDetailsModel {
     let highDetailText: String
     let lowDetailText: String
     let sunriseText: String
     let sunsetText: String
 }
 
+private enum TemperatureTrendCardTab: String {
+    case today
+    case next24Hours
+
+    var title: String {
+        switch self {
+        case .today:
+            return "Today's Temperatures"
+        case .next24Hours:
+            return "Next 24 Hours"
+        }
+    }
+}
+
 private struct TemperatureTrendCardView: View {
     @Binding var isShowingDetails: Bool
-    let model: TemperatureTrendCardModel
+    @Binding var selectedTab: TemperatureTrendCardTab
+    let todayModel: TemperatureTrendCardModel
+    let next24HourModel: TemperatureTrendCardModel?
 
     var body: some View {
-        WeatherCard(title: "Temperature Trend") {
-            TemperatureTrendChartContentView(model: model)
+        WeatherCard(title: "") {
+            temperatureHeader
 
-            TemperatureTrendDetailsView(
-                isExpanded: $isShowingDetails,
-                highDetailText: model.highDetailText,
-                lowDetailText: model.lowDetailText,
-                sunriseText: model.sunriseText,
-                sunsetText: model.sunsetText
-            )
+            TemperatureTrendChartContentView(model: activeModel)
+
+            if let details = activeModel.details {
+                TemperatureTrendDetailsView(
+                    isExpanded: $isShowingDetails,
+                    highDetailText: details.highDetailText,
+                    lowDetailText: details.lowDetailText,
+                    sunriseText: details.sunriseText,
+                    sunsetText: details.sunsetText
+                )
+            }
         }
+    }
+
+    private var activeModel: TemperatureTrendCardModel {
+        if selectedTab == .next24Hours, let next24HourModel {
+            return next24HourModel
+        }
+
+        return todayModel
+    }
+
+    private var temperatureHeader: some View {
+        HStack(spacing: 8) {
+            tabButton(for: .today)
+
+            if next24HourModel != nil {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+
+                tabButton(for: .next24Hours)
+            }
+        }
+    }
+
+    private func tabButton(for tab: TemperatureTrendCardTab) -> some View {
+        Button(action: {
+            selectedTab = tab
+        }) {
+            Text(tab.title)
+                .font(.caption.weight(selectedTab == tab ? .semibold : .regular))
+                .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(tab == .next24Hours && next24HourModel == nil)
     }
 }
 
@@ -211,7 +274,15 @@ private struct TemperatureTrendChartContentView: View {
             topMarkerRow
 
             Chart {
-                TemperatureHourGridMarks(hours: xAxisMarkValues, yDomain: model.yDomain)
+                TemperaturePeriodBackgroundMarks(
+                    segments: periodBackgroundSegments,
+                    yDomain: model.yDomain
+                )
+                TemperatureHourGridMarks(
+                    hours: xAxisMarkValues,
+                    emphasizedHours: emphasizedHourMarks,
+                    yDomain: model.yDomain
+                )
                 TemperatureLineMarks(
                     points: model.points,
                     high: model.high,
@@ -311,15 +382,46 @@ private struct TemperatureTrendChartContentView: View {
             return []
         }
 
+        let calendar = chartCalendar
         let start = xDomain.lowerBound
-        let calendar = Calendar(identifier: .gregorian)
-        return hourMarkOffsets.compactMap { hourOffset in
-            if hourOffset == 24 {
-                return xDomain.upperBound
-            }
+        let end = xDomain.upperBound
 
-            return calendar.date(byAdding: .hour, value: hourOffset, to: start)
+        if isFullDayDomain,
+           calendar.component(.minute, from: start) == 0,
+           calendar.component(.second, from: start) == 0 {
+            return hourMarkOffsets.compactMap { hourOffset in
+                if hourOffset == 24 {
+                    return xDomain.upperBound
+                }
+
+                return calendar.date(byAdding: .hour, value: hourOffset, to: start)
+            }
         }
+
+        var firstComponents = calendar.dateComponents([.year, .month, .day, .hour], from: start)
+        let roundedHour = ((firstComponents.hour ?? 0) / 3) * 3
+        firstComponents.hour = roundedHour
+        firstComponents.minute = 0
+        firstComponents.second = 0
+
+        guard var current = calendar.date(from: firstComponents) else {
+            return []
+        }
+
+        if current < start {
+            current = calendar.date(byAdding: .hour, value: 3, to: current) ?? current
+        }
+
+        var marks: [Date] = []
+        while current <= end {
+            marks.append(current)
+            guard let next = calendar.date(byAdding: .hour, value: 3, to: current) else {
+                break
+            }
+            current = next
+        }
+
+        return marks
     }
 
     private var hourLabelRow: some View {
@@ -330,27 +432,18 @@ private struct TemperatureTrendChartContentView: View {
 
             ZStack(alignment: .topLeading) {
                 ForEach(Array(xAxisMarkValues.enumerated()), id: \.offset) { index, date in
-                    Text(model.hourLabelText(date))
-                        .font(.caption2)
+                    let label = model.hourLabelText(date)
+
+                    Text(label)
+                        .font(.system(size: label == "Noon" || label == "Midnight" ? 7.5 : 8))
                         .foregroundStyle(labelOpacity(for: index) == 0 ? .clear : .secondary)
                         .opacity(labelOpacity(for: index))
                         .fixedSize()
-                        .position(
-                            x: leftInset + usableWidth * xPosition(for: index),
-                            y: 4
-                        )
+                        .position(x: leftInset + usableWidth * (xPosition(for: date) ?? 0.5), y: 4)
                 }
             }
         }
         .frame(height: 9)
-    }
-
-    private func xPosition(for index: Int) -> CGFloat {
-        guard xAxisMarkValues.count > 1 else {
-            return 0.5
-        }
-
-        return CGFloat(index) / CGFloat(xAxisMarkValues.count - 1)
     }
 
     private func xPosition(for date: Date) -> CGFloat? {
@@ -372,7 +465,7 @@ private struct TemperatureTrendChartContentView: View {
             return 1
         }
 
-        return (index == 0 || index == xAxisMarkValues.count - 1) ? 0 : 1
+        return 1
     }
 
     private func axisTemperature(from value: AxisValue) -> Int? {
@@ -397,22 +490,120 @@ private struct TemperatureTrendChartContentView: View {
             return Color.indigo.opacity(0.55)
         }
     }
+
+    private var chartCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let timeZoneIdentifier = model.timeZoneIdentifier,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            calendar.timeZone = timeZone
+        }
+        return calendar
+    }
+
+    private var isFullDayDomain: Bool {
+        guard let xDomain = model.xDomain else {
+            return false
+        }
+
+        let start = xDomain.lowerBound
+        let end = xDomain.upperBound
+        return chartCalendar.component(.hour, from: start) == 0 &&
+            chartCalendar.component(.minute, from: start) == 0 &&
+            chartCalendar.component(.second, from: start) == 0 &&
+            chartCalendar.component(.hour, from: end) == 0 &&
+            chartCalendar.component(.minute, from: end) == 0 &&
+            chartCalendar.component(.second, from: end) == 0
+    }
+
+    private var emphasizedHourMarks: Set<Date> {
+        Set(
+            xAxisMarkValues.filter { date in
+                let hour = chartCalendar.component(.hour, from: date)
+                let minute = chartCalendar.component(.minute, from: date)
+                let second = chartCalendar.component(.second, from: date)
+                return minute == 0 && second == 0 && (hour == 0 || hour == 12)
+            }
+        )
+    }
+
+    private var periodBackgroundSegments: [TemperaturePeriodBackgroundSegment] {
+        guard let xDomain = model.xDomain else {
+            return []
+        }
+
+        var segments: [TemperaturePeriodBackgroundSegment] = []
+        var currentStart = xDomain.lowerBound
+
+        while currentStart < xDomain.upperBound {
+            let hour = chartCalendar.component(.hour, from: currentStart)
+            let nextBoundaryHour = hour < 12 ? 12 : 24
+
+            let nextBoundary = nextBoundaryHour == 24
+                ? (chartCalendar.date(byAdding: .day, value: 1, to: chartCalendar.startOfDay(for: currentStart)) ?? xDomain.upperBound)
+                : (chartCalendar.date(bySettingHour: 12, minute: 0, second: 0, of: currentStart) ?? xDomain.upperBound)
+
+            let segmentEnd = min(nextBoundary, xDomain.upperBound)
+            if currentStart < segmentEnd {
+                segments.append(
+                    TemperaturePeriodBackgroundSegment(
+                        start: currentStart,
+                        end: segmentEnd,
+                        isAM: hour < 12
+                    )
+                )
+            }
+
+            currentStart = segmentEnd
+        }
+
+        return segments
+    }
 }
 
-private struct TemperatureHourGridMarks: ChartContent {
-    let hours: [Date]
+private struct TemperaturePeriodBackgroundSegment: Identifiable {
+    let start: Date
+    let end: Date
+    let isAM: Bool
+
+    var id: String {
+        "\(start.timeIntervalSinceReferenceDate)-\(end.timeIntervalSinceReferenceDate)-\(isAM)"
+    }
+}
+
+private struct TemperaturePeriodBackgroundMarks: ChartContent {
+    let segments: [TemperaturePeriodBackgroundSegment]
     let yDomain: ClosedRange<Double>?
 
     var body: some ChartContent {
         if let yDomain {
-            ForEach(Array(hours.enumerated()), id: \.offset) { index, hour in
+            ForEach(segments) { segment in
+                RectangleMark(
+                    xStart: .value(segment.isAM ? "AM Start" : "PM Start", segment.start),
+                    xEnd: .value(segment.isAM ? "AM End" : "PM End", segment.end),
+                    yStart: .value("Background Min", yDomain.lowerBound),
+                    yEnd: .value("Background Max", yDomain.upperBound)
+                )
+                .foregroundStyle(segment.isAM ? Color.blue.opacity(0.06) : Color.orange.opacity(0.06))
+            }
+        }
+    }
+}
+
+private struct TemperatureHourGridMarks: ChartContent {
+    let hours: [Date]
+    let emphasizedHours: Set<Date>
+    let yDomain: ClosedRange<Double>?
+
+    var body: some ChartContent {
+        if let yDomain {
+            ForEach(Array(hours.enumerated()), id: \.offset) { _, hour in
                 RuleMark(
                     x: .value("Hour Grid", hour),
                     yStart: .value("Grid Min", yDomain.lowerBound),
                     yEnd: .value("Grid Max", yDomain.upperBound)
                 )
                 .foregroundStyle(Color.primary.opacity(0.18))
-                .lineStyle(StrokeStyle(lineWidth: index == 4 ? 3 : 1))
+                .lineStyle(StrokeStyle(lineWidth: emphasizedHours.contains(hour) ? 3 : 1))
             }
         }
     }
@@ -817,6 +1008,7 @@ struct MenuContentView: View {
     @State private var isSearchingLocation = false
     @State private var addLocationError: String?
     @State private var isShowingWeatherDetails = false
+    @State private var selectedTemperatureChartTab: TemperatureTrendCardTab = .today
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -955,7 +1147,9 @@ struct MenuContentView: View {
 
                 TemperatureTrendCardView(
                     isShowingDetails: $isShowingWeatherDetails,
-                    model: TemperatureTrendCardModel(
+                    selectedTab: $selectedTemperatureChartTab,
+                    todayModel: TemperatureTrendCardModel(
+                        title: "Today's Temperatures",
                         points: viewModel.temperatureChartPoints,
                         high: viewModel.temperatureChartHigh,
                         highAt: viewModel.temperatureChartHighAt,
@@ -968,14 +1162,34 @@ struct MenuContentView: View {
                         markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
                         markerTimeText: viewModel.temperatureChartTimeText(_:),
                         hourLabelText: viewModel.temperatureChartHourLabelText(_:),
-                        highDetailText: viewModel.highDetailText,
-                        lowDetailText: viewModel.lowDetailText,
-                        sunriseText: viewModel.sunriseText,
-                        sunsetText: viewModel.sunsetText
+                        timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
+                        details: TemperatureTrendDetailsModel(
+                            highDetailText: viewModel.highDetailText,
+                            lowDetailText: viewModel.lowDetailText,
+                            sunriseText: viewModel.sunriseText,
+                            sunsetText: viewModel.sunsetText
+                        )
+                    ),
+                    next24HourModel: viewModel.next24HourTemperatureChartPoints.isEmpty ? nil : TemperatureTrendCardModel(
+                        title: "Next 24 Hours",
+                        points: viewModel.next24HourTemperatureChartPoints,
+                        high: viewModel.next24HourTemperatureChartHigh,
+                        highAt: viewModel.next24HourTemperatureChartHighAt,
+                        low: viewModel.next24HourTemperatureChartLow,
+                        lowAt: viewModel.next24HourTemperatureChartLowAt,
+                        markers: viewModel.next24HourTemperatureChartTimeMarkers,
+                        xDomain: viewModel.next24HourTemperatureChartXDomain,
+                        yDomain: viewModel.next24HourTemperatureChartYDomain,
+                        valueText: viewModel.temperatureChartValueText(_:),
+                        markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
+                        markerTimeText: viewModel.temperatureChartTimeText(_:),
+                        hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                        timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
+                        details: nil
                     )
                 )
-                    .id(viewModel.temperatureUnit)
-                    .accessibilityIdentifier("temperature-trend-chart")
+                    .id("temperature-card-\(selectedTemperatureChartTab.rawValue)-\(viewModel.temperatureUnit)")
+                    .accessibilityIdentifier("temperature-trend-next-24-chart")
             }
 
             Divider()

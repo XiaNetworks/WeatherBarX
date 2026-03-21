@@ -16,6 +16,8 @@ struct WeatherSnapshot: Codable, Equatable {
     let currentObservationTime: Date?
     let sunrise: Date?
     let sunset: Date?
+    let sunriseTimes: [Date]
+    let sunsetTimes: [Date]
     let highTemperature: Int?
     let highTemperatureAt: Date?
     let lowTemperature: Int?
@@ -34,6 +36,8 @@ struct WeatherSnapshot: Codable, Equatable {
         currentObservationTime: Date? = nil,
         sunrise: Date?,
         sunset: Date?,
+        sunriseTimes: [Date] = [],
+        sunsetTimes: [Date] = [],
         highTemperature: Int?,
         highTemperatureAt: Date?,
         lowTemperature: Int?,
@@ -51,6 +55,8 @@ struct WeatherSnapshot: Codable, Equatable {
         self.currentObservationTime = currentObservationTime
         self.sunrise = sunrise
         self.sunset = sunset
+        self.sunriseTimes = sunriseTimes
+        self.sunsetTimes = sunsetTimes
         self.highTemperature = highTemperature
         self.highTemperatureAt = highTemperatureAt
         self.lowTemperature = lowTemperature
@@ -162,7 +168,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             URLQueryItem(name: "current", value: "temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"),
             URLQueryItem(name: "hourly", value: "temperature_2m,precipitation_probability"),
             URLQueryItem(name: "daily", value: "sunrise,sunset"),
-            URLQueryItem(name: "forecast_days", value: "1"),
+            URLQueryItem(name: "forecast_days", value: "2"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -230,7 +236,10 @@ struct OpenMeteoWeatherService: WeatherServing {
                 temperature: roundedTemperature(from: $0.temperature)
             )
         }
-        let extrema = payload.hourly.dailyExtrema(in: payload.timezone)
+        let extrema = payload.hourly.dailyExtrema(
+            in: payload.timezone,
+            onSameDayAs: payload.currentDate
+        )
         let precipitationChance = payload.hourly.currentPrecipitationProbability(
             at: payload.currentDate,
             in: payload.timezone
@@ -245,6 +254,8 @@ struct OpenMeteoWeatherService: WeatherServing {
             currentObservationTime: payload.currentDate,
             sunrise: payload.sunriseDate,
             sunset: payload.sunsetDate,
+            sunriseTimes: payload.sunriseDates,
+            sunsetTimes: payload.sunsetDates,
             highTemperature: extrema.high.map { roundedTemperature(from: $0.temperature) },
             highTemperatureAt: extrema.high?.time,
             lowTemperature: extrema.low.map { roundedTemperature(from: $0.temperature) },
@@ -313,11 +324,19 @@ struct OpenMeteoForecastResponse: Decodable {
     }
 
     var sunriseDate: Date? {
-        localDate(from: daily.sunrise.first)
+        sunriseDates.first
     }
 
     var sunsetDate: Date? {
-        localDate(from: daily.sunset.first)
+        sunsetDates.first
+    }
+
+    var sunriseDates: [Date] {
+        daily.sunrise.compactMap(localDate(from:))
+    }
+
+    var sunsetDates: [Date] {
+        daily.sunset.compactMap(localDate(from:))
     }
 
     private func localDate(from value: String?) -> Date? {
@@ -358,16 +377,25 @@ struct OpenMeteoForecastResponse: Decodable {
         let temperature: [Double]
         let precipitationProbability: [Double]
 
-        func dailyExtrema(in timezone: String) -> (high: Entry?, low: Entry?) {
+        func dailyExtrema(in timezone: String, onSameDayAs referenceDate: Date?) -> (high: Entry?, low: Entry?) {
             let entries = temperatureSeries(in: timezone)
-            guard let first = entries.first else {
+            let filteredEntries: [Entry]
+            if let referenceDate {
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = TimeZone(identifier: timezone) ?? .autoupdatingCurrent
+                filteredEntries = entries.filter { calendar.isDate($0.time, inSameDayAs: referenceDate) }
+            } else {
+                filteredEntries = entries
+            }
+
+            guard let first = filteredEntries.first else {
                 return (nil, nil)
             }
 
             var high = first
             var low = first
 
-            for entry in entries.dropFirst() {
+            for entry in filteredEntries.dropFirst() {
                 if entry.temperature > high.temperature {
                     high = entry
                 }
@@ -836,7 +864,7 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var temperatureChartPoints: [TemperatureChartPoint] {
-        snapshot.hourlyTemperatures.map { point in
+        currentDayHourlyTemperatures.map { point in
             TemperatureChartPoint(time: point.time, temperature: displayTemperatureValue(point.temperature))
         }
     }
@@ -849,6 +877,26 @@ final class WeatherViewModel: ObservableObject {
         ]
         .compactMap { $0 }
         .sorted { $0.time < $1.time }
+    }
+
+    var next24HourTemperatureChartPoints: [TemperatureChartPoint] {
+        next24HourHourlyTemperatures.map { point in
+            TemperatureChartPoint(time: point.time, temperature: displayTemperatureValue(point.temperature))
+        }
+    }
+
+    var next24HourTemperatureChartTimeMarkers: [TimeMarker] {
+        guard let domain = next24HourTemperatureChartXDomain else {
+            return []
+        }
+
+        let solarMarkers = snapshot.sunriseTimes.map { TimeMarker(kind: .sunrise, time: $0) } +
+            snapshot.sunsetTimes.map { TimeMarker(kind: .sunset, time: $0) }
+
+        return ([snapshot.currentObservationTime.map { TimeMarker(kind: .current, time: $0) }] + solarMarkers.map(Optional.some))
+            .compactMap { $0 }
+            .filter { domain.contains($0.time) }
+            .sorted { $0.time < $1.time }
     }
 
     var temperatureChartHigh: Int? {
@@ -867,6 +915,22 @@ final class WeatherViewModel: ObservableObject {
         snapshot.lowTemperatureAt
     }
 
+    var next24HourTemperatureChartHigh: Int? {
+        next24HourHourlyTemperatures.max(by: { $0.temperature < $1.temperature }).map { displayTemperatureValue($0.temperature) }
+    }
+
+    var next24HourTemperatureChartHighAt: Date? {
+        next24HourHourlyTemperatures.max(by: { $0.temperature < $1.temperature })?.time
+    }
+
+    var next24HourTemperatureChartLow: Int? {
+        next24HourHourlyTemperatures.min(by: { $0.temperature < $1.temperature }).map { displayTemperatureValue($0.temperature) }
+    }
+
+    var next24HourTemperatureChartLowAt: Date? {
+        next24HourHourlyTemperatures.min(by: { $0.temperature < $1.temperature })?.time
+    }
+
     var temperatureChartXDomain: ClosedRange<Date>? {
         let calendar = chartCalendar
         let referenceDate = snapshot.currentObservationTime
@@ -877,7 +941,7 @@ final class WeatherViewModel: ObservableObject {
         guard
             let referenceDate,
             let startOfDay = calendar.startOfDay(for: referenceDate) as Date?,
-            let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: startOfDay)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)
         else {
             return nil
         }
@@ -886,15 +950,26 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var temperatureChartYDomain: ClosedRange<Double>? {
-        let values = temperatureChartPoints.map(\.temperature)
-        guard !values.isEmpty else {
+        chartYDomain(for: temperatureChartPoints)
+    }
+
+    var next24HourTemperatureChartXDomain: ClosedRange<Date>? {
+        guard
+            let observationTime = snapshot.currentObservationTime,
+            let start = roundedDownToThreeHourBoundary(observationTime)
+        else {
             return nil
         }
 
-        let low = Double(values.min() ?? 0)
-        let high = Double(values.max() ?? 0)
-        let padding = max(2, ceil((high - low) * 0.1))
-        return (low - padding) ... (high + padding)
+        return start ... start.addingTimeInterval(24 * 60 * 60)
+    }
+
+    var next24HourTemperatureChartYDomain: ClosedRange<Double>? {
+        chartYDomain(for: next24HourTemperatureChartPoints)
+    }
+
+    var chartTimeZoneIdentifier: String? {
+        snapshot.timezoneIdentifier
     }
 
     var isRefreshButtonEnabled: Bool {
@@ -1129,11 +1204,15 @@ final class WeatherViewModel: ObservableObject {
     func temperatureChartHourLabelText(_ date: Date) -> String {
         let hour = chartCalendar.component(.hour, from: date)
 
+        if hour == 0 {
+            return "Midnight"
+        }
+
         if hour == 12 {
             return "Noon"
         }
 
-        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        let displayHour = hour > 12 ? hour - 12 : hour
         return "\(displayHour)"
     }
 
@@ -1389,6 +1468,46 @@ final class WeatherViewModel: ObservableObject {
         case .celsius:
             return Int((((Double(value) - 32) * 5) / 9).rounded())
         }
+    }
+
+    private func roundedDownToThreeHourBoundary(_ date: Date) -> Date? {
+        var components = chartCalendar.dateComponents([.year, .month, .day, .hour], from: date)
+        components.hour = ((components.hour ?? 0) / 3) * 3
+        components.minute = 0
+        components.second = 0
+        return chartCalendar.date(from: components)
+    }
+
+    private var currentDayHourlyTemperatures: [WeatherSnapshot.HourlyTemperature] {
+        guard
+            let domain = temperatureChartXDomain
+        else {
+            return snapshot.hourlyTemperatures
+        }
+
+        return snapshot.hourlyTemperatures.filter {
+            $0.time >= domain.lowerBound && $0.time < domain.upperBound
+        }
+    }
+
+    private var next24HourHourlyTemperatures: [WeatherSnapshot.HourlyTemperature] {
+        guard let domain = next24HourTemperatureChartXDomain else {
+            return []
+        }
+
+        return snapshot.hourlyTemperatures.filter { domain.contains($0.time) }
+    }
+
+    private func chartYDomain(for points: [TemperatureChartPoint]) -> ClosedRange<Double>? {
+        let values = points.map(\.temperature)
+        guard !values.isEmpty else {
+            return nil
+        }
+
+        let low = Double(values.min() ?? 0)
+        let high = Double(values.max() ?? 0)
+        let padding = max(2, ceil((high - low) * 0.1))
+        return (low - padding) ... (high + padding)
     }
 
     private func formatTime(_ value: Date?, using formatter: DateFormatter? = nil) -> String {
