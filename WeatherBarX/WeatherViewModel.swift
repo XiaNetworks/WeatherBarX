@@ -8,6 +8,16 @@ struct WeatherSnapshot: Codable, Equatable {
         let temperature: Int
     }
 
+    struct HourlyPrecipitationProbability: Codable, Equatable {
+        let time: Date
+        let probability: Int
+    }
+
+    struct HourlyWindSpeed: Codable, Equatable {
+        let time: Date
+        let speed: Int
+    }
+
     let summary: String
     let temperature: Int?
     let condition: WeatherCondition
@@ -26,6 +36,8 @@ struct WeatherSnapshot: Codable, Equatable {
     let humidity: Int?
     let precipitationChance: Int?
     let hourlyTemperatures: [HourlyTemperature]
+    let hourlyPrecipitationProbabilities: [HourlyPrecipitationProbability]
+    let hourlyWindSpeeds: [HourlyWindSpeed]
 
     init(
         summary: String,
@@ -45,7 +57,9 @@ struct WeatherSnapshot: Codable, Equatable {
         windSpeed: Int? = nil,
         humidity: Int? = nil,
         precipitationChance: Int? = nil,
-        hourlyTemperatures: [HourlyTemperature] = []
+        hourlyTemperatures: [HourlyTemperature] = [],
+        hourlyPrecipitationProbabilities: [HourlyPrecipitationProbability] = [],
+        hourlyWindSpeeds: [HourlyWindSpeed] = []
     ) {
         self.summary = summary
         self.temperature = temperature
@@ -65,6 +79,8 @@ struct WeatherSnapshot: Codable, Equatable {
         self.humidity = humidity
         self.precipitationChance = precipitationChance
         self.hourlyTemperatures = hourlyTemperatures
+        self.hourlyPrecipitationProbabilities = hourlyPrecipitationProbabilities
+        self.hourlyWindSpeeds = hourlyWindSpeeds
     }
 
     static let placeholder = WeatherSnapshot(
@@ -166,7 +182,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             URLQueryItem(name: "latitude", value: String(latitude)),
             URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"),
-            URLQueryItem(name: "hourly", value: "temperature_2m,precipitation_probability"),
+            URLQueryItem(name: "hourly", value: "temperature_2m,precipitation_probability,wind_speed_10m"),
             URLQueryItem(name: "daily", value: "sunrise,sunset"),
             URLQueryItem(name: "forecast_days", value: "2"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
@@ -236,6 +252,18 @@ struct OpenMeteoWeatherService: WeatherServing {
                 temperature: roundedTemperature(from: $0.temperature)
             )
         }
+        let hourlyPrecipitationProbabilities = payload.hourly.precipitationProbabilitySeries(in: payload.timezone).map {
+            WeatherSnapshot.HourlyPrecipitationProbability(
+                time: $0.time,
+                probability: roundedTemperature(from: $0.probability)
+            )
+        }
+        let hourlyWindSpeeds = payload.hourly.windSpeedSeries(in: payload.timezone).map {
+            WeatherSnapshot.HourlyWindSpeed(
+                time: $0.time,
+                speed: roundedTemperature(from: $0.speed)
+            )
+        }
         let extrema = payload.hourly.dailyExtrema(
             in: payload.timezone,
             onSameDayAs: payload.currentDate
@@ -263,7 +291,9 @@ struct OpenMeteoWeatherService: WeatherServing {
             windSpeed: payload.current.windSpeed.map(roundedTemperature(from:)),
             humidity: payload.current.relativeHumidity.map(roundedTemperature(from:)),
             precipitationChance: precipitationChance.map(roundedTemperature(from:)),
-            hourlyTemperatures: hourlyTemperatures
+            hourlyTemperatures: hourlyTemperatures,
+            hourlyPrecipitationProbabilities: hourlyPrecipitationProbabilities,
+            hourlyWindSpeeds: hourlyWindSpeeds
         )
     }
 }
@@ -373,9 +403,20 @@ struct OpenMeteoForecastResponse: Decodable {
             let temperature: Double
         }
 
+        struct PrecipitationEntry: Equatable {
+            let time: Date
+            let probability: Double
+        }
+
+        struct WindSpeedEntry: Equatable {
+            let time: Date
+            let speed: Double
+        }
+
         let time: [String]
         let temperature: [Double]
         let precipitationProbability: [Double]
+        let windSpeed: [Double]
 
         func dailyExtrema(in timezone: String, onSameDayAs referenceDate: Date?) -> (high: Entry?, low: Entry?) {
             let entries = temperatureSeries(in: timezone)
@@ -416,6 +457,24 @@ struct OpenMeteoForecastResponse: Decodable {
             }
         }
 
+        func precipitationProbabilitySeries(in timezone: String) -> [PrecipitationEntry] {
+            zip(time, precipitationProbability).compactMap { rawTime, value in
+                guard let date = OpenMeteoForecastResponse.localDate(from: rawTime, timezone: timezone) else {
+                    return nil
+                }
+                return PrecipitationEntry(time: date, probability: value)
+            }
+        }
+
+        func windSpeedSeries(in timezone: String) -> [WindSpeedEntry] {
+            zip(time, windSpeed).compactMap { rawTime, value in
+                guard let date = OpenMeteoForecastResponse.localDate(from: rawTime, timezone: timezone) else {
+                    return nil
+                }
+                return WindSpeedEntry(time: date, speed: value)
+            }
+        }
+
         func currentPrecipitationProbability(at currentDate: Date?, in timezone: String) -> Double? {
             guard let currentDate else {
                 return precipitationProbability.first
@@ -443,12 +502,14 @@ struct OpenMeteoForecastResponse: Decodable {
             time = try container.decodeIfPresent([String].self, forKey: .time) ?? []
             temperature = try container.decodeIfPresent([Double].self, forKey: .temperature) ?? []
             precipitationProbability = try container.decodeIfPresent([Double].self, forKey: .precipitationProbability) ?? []
+            windSpeed = try container.decodeIfPresent([Double].self, forKey: .windSpeed) ?? []
         }
 
         private enum CodingKeys: String, CodingKey {
             case time
             case temperature = "temperature_2m"
             case precipitationProbability = "precipitation_probability"
+            case windSpeed = "wind_speed_10m"
         }
     }
 
@@ -811,6 +872,38 @@ final class WeatherViewModel: ObservableObject {
         return formatSunsetText()
     }
 
+    var next24HourHighDetailText: String {
+        if isLoading {
+            return "High: -- at --"
+        }
+
+        return "High: \(temperatureChartValueText(next24HourTemperatureChartHigh)) at \(formatRelativeDayTime(next24HourTemperatureChartHighAt))"
+    }
+
+    var next24HourLowDetailText: String {
+        if isLoading {
+            return "Low: -- at --"
+        }
+
+        return "Low: \(temperatureChartValueText(next24HourTemperatureChartLow)) at \(formatRelativeDayTime(next24HourTemperatureChartLowAt))"
+    }
+
+    var next24HourSunriseText: String {
+        if isLoading {
+            return "Sunrise: --"
+        }
+
+        return "Sunrise: \(formatRelativeDayTime(next24HourSunriseTime))"
+    }
+
+    var next24HourSunsetText: String {
+        if isLoading {
+            return "Sunset: --"
+        }
+
+        return "Sunset: \(formatRelativeDayTime(next24HourSunsetTime))"
+    }
+
     var windText: String {
         if isLoading {
             return "Wind: --"
@@ -966,6 +1059,46 @@ final class WeatherViewModel: ObservableObject {
 
     var next24HourTemperatureChartYDomain: ClosedRange<Double>? {
         chartYDomain(for: next24HourTemperatureChartPoints)
+    }
+
+    var next24HourPrecipitationChartPoints: [TemperatureChartPoint] {
+        next24HourHourlyPrecipitationProbabilities.map { point in
+            TemperatureChartPoint(time: point.time, temperature: point.probability)
+        }
+    }
+
+    var next24HourPrecipitationChartTimeMarkers: [TimeMarker] {
+        snapshot.currentObservationTime.map { [TimeMarker(kind: .current, time: $0)] } ?? []
+    }
+
+    var next24HourPrecipitationChartXDomain: ClosedRange<Date>? {
+        next24HourTemperatureChartXDomain
+    }
+
+    var next24HourPrecipitationChartYDomain: ClosedRange<Double>? {
+        guard !next24HourPrecipitationChartPoints.isEmpty else {
+            return nil
+        }
+
+        return 0 ... 100
+    }
+
+    var next24HourWindChartPoints: [TemperatureChartPoint] {
+        next24HourHourlyWindSpeeds.map { point in
+            TemperatureChartPoint(time: point.time, temperature: displayWindSpeedValue(point.speed))
+        }
+    }
+
+    var next24HourWindChartTimeMarkers: [TimeMarker] {
+        snapshot.currentObservationTime.map { [TimeMarker(kind: .current, time: $0)] } ?? []
+    }
+
+    var next24HourWindChartXDomain: ClosedRange<Date>? {
+        next24HourTemperatureChartXDomain
+    }
+
+    var next24HourWindChartYDomain: ClosedRange<Double>? {
+        chartYDomain(for: next24HourWindChartPoints)
     }
 
     var chartTimeZoneIdentifier: String? {
@@ -1196,6 +1329,22 @@ final class WeatherViewModel: ObservableObject {
         return "\(value)°"
     }
 
+    func precipitationChartValueText(_ value: Int?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(value)%"
+    }
+
+    func windChartValueText(_ value: Int?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(value)"
+    }
+
     func temperatureChartTimeText(_ date: Date) -> String {
         let formatter = Self.makeChartMarkerTimeFormatter(timeZoneIdentifier: snapshot.timezoneIdentifier)
         return formatter.string(from: date)
@@ -1229,12 +1378,21 @@ final class WeatherViewModel: ObservableObject {
             return "--"
         }
 
+        let displayedWindSpeed = displayWindSpeedValue(windSpeed)
         switch temperatureUnit {
         case .fahrenheit:
-            return "\(windSpeed) mph"
+            return "\(displayedWindSpeed) mph"
         case .celsius:
-            let kilometersPerHour = Int((Double(windSpeed) * 1.60934).rounded())
-            return "\(kilometersPerHour) km/h"
+            return "\(displayedWindSpeed) km/h"
+        }
+    }
+
+    private func displayWindSpeedValue(_ value: Int) -> Int {
+        switch temperatureUnit {
+        case .fahrenheit:
+            return value
+        case .celsius:
+            return Int((Double(value) * 1.60934).rounded())
         }
     }
 
@@ -1498,6 +1656,22 @@ final class WeatherViewModel: ObservableObject {
         return snapshot.hourlyTemperatures.filter { domain.contains($0.time) }
     }
 
+    private var next24HourHourlyPrecipitationProbabilities: [WeatherSnapshot.HourlyPrecipitationProbability] {
+        guard let domain = next24HourPrecipitationChartXDomain else {
+            return []
+        }
+
+        return snapshot.hourlyPrecipitationProbabilities.filter { domain.contains($0.time) }
+    }
+
+    private var next24HourHourlyWindSpeeds: [WeatherSnapshot.HourlyWindSpeed] {
+        guard let domain = next24HourWindChartXDomain else {
+            return []
+        }
+
+        return snapshot.hourlyWindSpeeds.filter { domain.contains($0.time) }
+    }
+
     private func chartYDomain(for points: [TemperatureChartPoint]) -> ClosedRange<Double>? {
         let values = points.map(\.temperature)
         guard !values.isEmpty else {
@@ -1517,6 +1691,45 @@ final class WeatherViewModel: ObservableObject {
 
         let formatter = formatter ?? Self.makeTimeFormatter(timeZoneIdentifier: snapshot.timezoneIdentifier)
         return formatter.string(from: value)
+    }
+
+    private func formatRelativeDayTime(_ value: Date?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        let timeText = formatTime(value)
+
+        guard let referenceDate = snapshot.currentObservationTime else {
+            return timeText
+        }
+
+        if chartCalendar.isDate(value, inSameDayAs: referenceDate) {
+            return "\(timeText) Today"
+        }
+
+        if let tomorrow = chartCalendar.date(byAdding: .day, value: 1, to: referenceDate),
+           chartCalendar.isDate(value, inSameDayAs: tomorrow) {
+            return "\(timeText) Tomorrow"
+        }
+
+        return timeText
+    }
+
+    private var next24HourSunriseTime: Date? {
+        guard let domain = next24HourTemperatureChartXDomain else {
+            return nil
+        }
+
+        return snapshot.sunriseTimes.first(where: { domain.contains($0) })
+    }
+
+    private var next24HourSunsetTime: Date? {
+        guard let domain = next24HourTemperatureChartXDomain else {
+            return nil
+        }
+
+        return snapshot.sunsetTimes.first(where: { domain.contains($0) })
     }
 
     private static func makeTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {

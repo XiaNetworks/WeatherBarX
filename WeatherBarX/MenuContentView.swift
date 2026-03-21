@@ -141,6 +141,20 @@ private enum TemperatureTrendCardTab: String {
     }
 }
 
+private enum SecondaryTrendCardTab: String {
+    case precipitation
+    case wind
+
+    var title: String {
+        switch self {
+        case .precipitation:
+            return "Precipitation"
+        case .wind:
+            return "Wind Speed"
+        }
+    }
+}
+
 private struct TemperatureTrendCardView: View {
     @Binding var isShowingDetails: Bool
     @Binding var selectedTab: TemperatureTrendCardTab
@@ -175,15 +189,15 @@ private struct TemperatureTrendCardView: View {
 
     private var temperatureHeader: some View {
         HStack(spacing: 8) {
-            tabButton(for: .today)
-
             if next24HourModel != nil {
+                tabButton(for: .next24Hours)
+
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
-
-                tabButton(for: .next24Hours)
             }
+
+            tabButton(for: .today)
         }
     }
 
@@ -1008,7 +1022,8 @@ struct MenuContentView: View {
     @State private var isSearchingLocation = false
     @State private var addLocationError: String?
     @State private var isShowingWeatherDetails = false
-    @State private var selectedTemperatureChartTab: TemperatureTrendCardTab = .today
+    @State private var selectedTemperatureChartTab: TemperatureTrendCardTab = .next24Hours
+    @State private var selectedSecondaryChartTab: SecondaryTrendCardTab = .precipitation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1185,11 +1200,86 @@ struct MenuContentView: View {
                         markerTimeText: viewModel.temperatureChartTimeText(_:),
                         hourLabelText: viewModel.temperatureChartHourLabelText(_:),
                         timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
-                        details: nil
+                        details: TemperatureTrendDetailsModel(
+                            highDetailText: viewModel.next24HourHighDetailText,
+                            lowDetailText: viewModel.next24HourLowDetailText,
+                            sunriseText: viewModel.next24HourSunriseText,
+                            sunsetText: viewModel.next24HourSunsetText
+                        )
                     )
                 )
                     .id("temperature-card-\(selectedTemperatureChartTab.rawValue)-\(viewModel.temperatureUnit)")
-                    .accessibilityIdentifier("temperature-trend-next-24-chart")
+                    .accessibilityIdentifier("temperature-trend-chart")
+            }
+
+            if !viewModel.next24HourPrecipitationChartPoints.isEmpty || !viewModel.next24HourWindChartPoints.isEmpty {
+                WeatherCard(title: "") {
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            selectedSecondaryChartTab = .precipitation
+                        }) {
+                            Text(SecondaryTrendCardTab.precipitation.title)
+                                .font(.caption.weight(selectedSecondaryChartTab == .precipitation ? .semibold : .regular))
+                                .foregroundStyle(selectedSecondaryChartTab == .precipitation ? .primary : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(viewModel.next24HourPrecipitationChartPoints.isEmpty)
+
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+
+                        Button(action: {
+                            selectedSecondaryChartTab = .wind
+                        }) {
+                            Text(SecondaryTrendCardTab.wind.title)
+                                .font(.caption.weight(selectedSecondaryChartTab == .wind ? .semibold : .regular))
+                                .foregroundStyle(selectedSecondaryChartTab == .wind ? .primary : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(viewModel.next24HourWindChartPoints.isEmpty)
+                    }
+
+                    TemperatureTrendChartContentView(
+                        model: selectedSecondaryChartTab == .wind
+                            ? TemperatureTrendCardModel(
+                                title: "Wind Speed",
+                                points: viewModel.next24HourWindChartPoints,
+                                high: nil,
+                                highAt: nil,
+                                low: nil,
+                                lowAt: nil,
+                                markers: viewModel.next24HourWindChartTimeMarkers,
+                                xDomain: viewModel.next24HourWindChartXDomain,
+                                yDomain: viewModel.next24HourWindChartYDomain,
+                                valueText: viewModel.windChartValueText(_:),
+                                markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
+                                markerTimeText: viewModel.temperatureChartTimeText(_:),
+                                hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                                timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
+                                details: nil
+                            )
+                            : TemperatureTrendCardModel(
+                                title: "Precipitation",
+                                points: viewModel.next24HourPrecipitationChartPoints,
+                                high: nil,
+                                highAt: nil,
+                                low: nil,
+                                lowAt: nil,
+                                markers: viewModel.next24HourPrecipitationChartTimeMarkers,
+                                xDomain: viewModel.next24HourPrecipitationChartXDomain,
+                                yDomain: viewModel.next24HourPrecipitationChartYDomain,
+                                valueText: viewModel.precipitationChartValueText(_:),
+                                markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
+                                markerTimeText: viewModel.temperatureChartTimeText(_:),
+                                hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                                timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
+                                details: nil
+                            )
+                    )
+                }
+                .id("secondary-card-\(selectedSecondaryChartTab.rawValue)-\(viewModel.temperatureUnit)")
+                .accessibilityIdentifier("secondary-trend-chart")
             }
 
             Divider()

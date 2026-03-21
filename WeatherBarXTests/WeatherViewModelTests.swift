@@ -638,6 +638,113 @@ final class WeatherViewModelTests: XCTestCase {
             viewModel.next24HourTemperatureChartTimeMarkers.map(\.time),
             [currentTime, formatter.date(from: "2024-11-11 17:05")!, nextSunrise]
         )
+        XCTAssertEqual(normalizedWhitespace(viewModel.next24HourHighDetailText), "High: 76° at 11:00 PM Today")
+        XCTAssertEqual(normalizedWhitespace(viewModel.next24HourLowDetailText), "Low: 67° at 8:00 AM Tomorrow")
+        XCTAssertEqual(normalizedWhitespace(viewModel.next24HourSunriseText), "Sunrise: 7:00 AM Tomorrow")
+        XCTAssertEqual(normalizedWhitespace(viewModel.next24HourSunsetText), "Sunset: 5:05 PM Today")
+    }
+
+    func testNext24HourPrecipitationChartUsesRollingWindow() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+
+        let currentTime = formatter.date(from: "2024-11-11 14:00")!
+        let todayLate = formatter.date(from: "2024-11-11 23:00")!
+        let tomorrowMorning = formatter.date(from: "2024-11-12 08:00")!
+        let tomorrowNoon = formatter.date(from: "2024-11-12 12:00")!
+        let tomorrowLate = formatter.date(from: "2024-11-12 15:00")!
+
+        let snapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 72,
+            condition: .cloudy,
+            isDaylight: true,
+            timezoneIdentifier: "America/New_York",
+            currentObservationTime: currentTime,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: nil,
+            highTemperatureAt: nil,
+            lowTemperature: nil,
+            lowTemperatureAt: nil,
+            hourlyPrecipitationProbabilities: [
+                .init(time: formatter.date(from: "2024-11-11 11:00")!, probability: 25),
+                .init(time: currentTime, probability: 40),
+                .init(time: todayLate, probability: 55),
+                .init(time: tomorrowMorning, probability: 35),
+                .init(time: tomorrowNoon, probability: 60),
+                .init(time: tomorrowLate, probability: 20),
+            ]
+        )
+
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 12:00"))
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartXDomain?.upperBound, formatter.date(from: "2024-11-12 12:00"))
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartPoints.map(\.temperature), [40, 55, 35, 60])
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartPoints.map(\.time), [currentTime, todayLate, tomorrowMorning, tomorrowNoon])
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartYDomain, 0 ... 100)
+        XCTAssertEqual(viewModel.next24HourPrecipitationChartTimeMarkers.map(\.time), [currentTime])
+    }
+
+    func testNext24HourWindChartUsesRollingWindow() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+
+        let currentTime = formatter.date(from: "2024-11-11 14:00")!
+        let todayLate = formatter.date(from: "2024-11-11 23:00")!
+        let tomorrowMorning = formatter.date(from: "2024-11-12 08:00")!
+        let tomorrowNoon = formatter.date(from: "2024-11-12 12:00")!
+        let tomorrowLate = formatter.date(from: "2024-11-12 15:00")!
+
+        let snapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 72,
+            condition: .cloudy,
+            isDaylight: true,
+            timezoneIdentifier: "America/New_York",
+            currentObservationTime: currentTime,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: nil,
+            highTemperatureAt: nil,
+            lowTemperature: nil,
+            lowTemperatureAt: nil,
+            hourlyWindSpeeds: [
+                .init(time: formatter.date(from: "2024-11-11 11:00")!, speed: 8),
+                .init(time: currentTime, speed: 12),
+                .init(time: todayLate, speed: 10),
+                .init(time: tomorrowMorning, speed: 14),
+                .init(time: tomorrowNoon, speed: 9),
+                .init(time: tomorrowLate, speed: 6),
+            ]
+        )
+
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertEqual(viewModel.next24HourWindChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 12:00"))
+        XCTAssertEqual(viewModel.next24HourWindChartXDomain?.upperBound, formatter.date(from: "2024-11-12 12:00"))
+        XCTAssertEqual(viewModel.next24HourWindChartPoints.map(\.temperature), [12, 10, 14, 9])
+        XCTAssertEqual(viewModel.next24HourWindChartPoints.map(\.time), [currentTime, todayLate, tomorrowMorning, tomorrowNoon])
+        XCTAssertEqual(viewModel.next24HourWindChartTimeMarkers.map(\.time), [currentTime])
+
+        viewModel.toggleTemperatureUnit()
+
+        XCTAssertEqual(viewModel.next24HourWindChartPoints.map(\.temperature), [19, 16, 23, 14])
     }
 
     func testTemperatureChartLabelAlignmentUsesLeadingNearLeftEdge() {
