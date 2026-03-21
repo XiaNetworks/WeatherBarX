@@ -33,6 +33,7 @@ struct WeatherSettings: Equatable {
     static let savedLocationsKey = "savedLocations"
     static let selectedLocationIndexKey = "selectedLocationIndex"
     static let cachedWeatherByLocationKey = "cachedWeatherByLocation"
+    static let hasInitializedLaunchAtLoginKey = "hasInitializedLaunchAtLogin"
 
     static let defaultLocationName = "Washington, DC"
     static let defaultLatitude = 38.9072

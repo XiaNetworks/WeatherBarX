@@ -619,6 +619,8 @@ final class WeatherViewModel: ObservableObject {
         }
     ) {
         let settings = WeatherSettings(defaults: defaults)
+        Self.initializeLaunchAtLoginIfNeeded(defaults: defaults, launchAtLoginManager: launchAtLoginManager)
+
         self.settings = settings
         self.defaults = defaults
         self.snapshot = snapshot ?? .placeholder
@@ -641,6 +643,25 @@ final class WeatherViewModel: ObservableObject {
         if refreshOnInit && !settings.usesPlaceholderWeather {
             restoreCachedWeatherIfFreshForCurrentLocation()
         }
+    }
+
+    private static func initializeLaunchAtLoginIfNeeded(
+        defaults: UserDefaults,
+        launchAtLoginManager: any LaunchAtLoginManaging
+    ) {
+        guard !defaults.bool(forKey: WeatherSettings.hasInitializedLaunchAtLoginKey) else {
+            return
+        }
+
+        defer {
+            defaults.set(true, forKey: WeatherSettings.hasInitializedLaunchAtLoginKey)
+        }
+
+        guard !launchAtLoginManager.isEnabled else {
+            return
+        }
+
+        try? launchAtLoginManager.setEnabled(true)
     }
 
     deinit {

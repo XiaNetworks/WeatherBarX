@@ -450,9 +450,11 @@ final class WeatherViewModelTests: XCTestCase {
     }
 
     func testLaunchAtLoginToggleUpdatesButtonState() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: WeatherSettings.hasInitializedLaunchAtLoginKey)
         let launchAtLoginManager = MockLaunchAtLoginManager(isEnabled: false)
         let viewModel = WeatherViewModel(
-            defaults: makeDefaults(),
+            defaults: defaults,
             snapshot: .placeholder,
             launchAtLoginManager: launchAtLoginManager,
             weatherService: MockWeatherService(),
@@ -465,6 +467,40 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.isLaunchAtLoginEnabled)
         XCTAssertEqual(launchAtLoginManager.setEnabledCalls, [true])
+    }
+
+    func testFirstLaunchEnablesLaunchAtLoginByDefault() {
+        let defaults = makeDefaults()
+        let launchAtLoginManager = MockLaunchAtLoginManager(isEnabled: false)
+
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            launchAtLoginManager: launchAtLoginManager,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertTrue(viewModel.isLaunchAtLoginEnabled)
+        XCTAssertEqual(launchAtLoginManager.setEnabledCalls, [true])
+        XCTAssertTrue(defaults.bool(forKey: WeatherSettings.hasInitializedLaunchAtLoginKey))
+    }
+
+    func testSubsequentLaunchDoesNotReenableLaunchAtLogin() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: WeatherSettings.hasInitializedLaunchAtLoginKey)
+        let launchAtLoginManager = MockLaunchAtLoginManager(isEnabled: false)
+
+        let viewModel = WeatherViewModel(
+            defaults: defaults,
+            snapshot: .placeholder,
+            launchAtLoginManager: launchAtLoginManager,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertFalse(viewModel.isLaunchAtLoginEnabled)
+        XCTAssertTrue(launchAtLoginManager.setEnabledCalls.isEmpty)
     }
 
     func testTemperatureUnitToggleConvertsDisplayedTemperatures() {
@@ -1114,4 +1150,3 @@ private func waitUntil(
         await Task.yield()
     }
 }
-
