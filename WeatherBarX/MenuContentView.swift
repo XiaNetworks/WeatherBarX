@@ -44,6 +44,25 @@ private struct DetailRow: View {
     }
 }
 
+private struct TemperatureUnitToggleLabel: View {
+    let temperatureUnit: TemperatureUnit
+
+    var body: some View {
+        HStack(spacing: 0) {
+            unitText("°F", isSelected: temperatureUnit == .fahrenheit)
+            Text("/")
+                .foregroundStyle(.tertiary)
+            unitText("°C", isSelected: temperatureUnit == .celsius)
+        }
+    }
+
+    private func unitText(_ text: String, isSelected: Bool) -> some View {
+        Text(text)
+            .fontWeight(isSelected ? .semibold : .regular)
+            .foregroundStyle(isSelected ? .primary : .tertiary)
+    }
+}
+
 private struct AddLocationEditorView: View {
     @Binding var mode: AddLocationMode
     @Binding var locationName: String
@@ -465,7 +484,9 @@ struct MenuContentView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("launch-at-login-button")
 
-                    Button(viewModel.temperatureUnitButtonText, action: viewModel.toggleTemperatureUnit)
+                    Button(action: viewModel.toggleTemperatureUnit) {
+                        TemperatureUnitToggleLabel(temperatureUnit: viewModel.temperatureUnit)
+                    }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .accessibilityIdentifier("temperature-unit-button")
