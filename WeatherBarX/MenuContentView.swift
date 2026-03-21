@@ -79,6 +79,7 @@ private struct TemperatureUnitToggleLabel: View {
 }
 
 private struct TemperatureTrendChartView: View {
+    @Binding var isShowingDetails: Bool
     let points: [WeatherViewModel.TemperatureChartPoint]
     let high: Int?
     let highAt: Date?
@@ -91,11 +92,19 @@ private struct TemperatureTrendChartView: View {
     let markerLabelText: (WeatherViewModel.TimeMarker) -> String
     let markerTimeText: (Date) -> String
     let hourLabelText: (Date) -> String
+    let highDetailText: String
+    let lowDetailText: String
+    let sunriseText: String
+    let sunsetText: String
     private let hourMarkOffsets = [0, 3, 6, 9, 12, 15, 18, 21, 24]
     @State private var plotFrame: CGRect = .zero
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Temperature Trend")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
             topMarkerRow
 
             Chart {
@@ -156,8 +165,66 @@ private struct TemperatureTrendChartView: View {
 
             hourLabelRow
 
-            markerLegend
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: {
+                    isShowingDetails.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isShowingDetails ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                        Text("Details")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if isShowingDetails {
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            DetailRow(
+                                iconName: "thermometer.high",
+                                text: highDetailText,
+                                accessibilityIdentifier: "high-detail-text"
+                            )
+
+                            DetailRow(
+                                iconName: "thermometer.low",
+                                text: lowDetailText,
+                                accessibilityIdentifier: "low-detail-text"
+                            )
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            DetailRow(
+                                iconName: "sunrise",
+                                text: sunriseText,
+                                accessibilityIdentifier: "sunrise-text"
+                            )
+
+                            DetailRow(
+                                iconName: "sunset.fill",
+                                text: sunsetText,
+                                accessibilityIdentifier: "sunset-text"
+                            )
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(MenuDetailColors.detail)
+                    .padding(.top, 4)
+                }
+            }
+            .accessibilityIdentifier("weather-details-disclosure")
         }
+        .padding(8)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private var topMarkerRow: some View {
@@ -210,10 +277,6 @@ private struct TemperatureTrendChartView: View {
 
             return calendar.date(byAdding: .hour, value: hourOffset, to: start)
         }
-    }
-
-    private var markerLegend: some View {
-        EmptyView()
     }
 
     private var hourLabelRow: some View {
@@ -291,6 +354,7 @@ private struct TemperatureTrendChartView: View {
             return Color.indigo.opacity(0.55)
         }
     }
+
 }
 
 private struct TemperatureHourGridMarks: ChartContent {
@@ -450,6 +514,7 @@ private struct TemperatureLineMarks: ChartContent {
                     .stroke(color.opacity(0.55), lineWidth: 1)
             )
     }
+
 }
 
 private struct TemperatureTimeMarkerMarks: ChartContent {
@@ -847,6 +912,7 @@ struct MenuContentView: View {
                 Divider()
 
                 TemperatureTrendChartView(
+                    isShowingDetails: $isShowingWeatherDetails,
                     points: viewModel.temperatureChartPoints,
                     high: viewModel.temperatureChartHigh,
                     highAt: viewModel.temperatureChartHighAt,
@@ -858,64 +924,15 @@ struct MenuContentView: View {
                     valueText: viewModel.temperatureChartValueText(_:),
                     markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
                     markerTimeText: viewModel.temperatureChartTimeText(_:),
-                    hourLabelText: viewModel.temperatureChartHourLabelText(_:)
+                    hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                    highDetailText: viewModel.highDetailText,
+                    lowDetailText: viewModel.lowDetailText,
+                    sunriseText: viewModel.sunriseText,
+                    sunsetText: viewModel.sunsetText
                 )
                     .id(viewModel.temperatureUnit)
                     .accessibilityIdentifier("temperature-trend-chart")
             }
-
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: {
-                    isShowingWeatherDetails.toggle()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isShowingWeatherDetails ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                        Text("Details")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if isShowingWeatherDetails {
-                    VStack(alignment: .leading, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            DetailRow(
-                                iconName: "thermometer.high",
-                                text: viewModel.highDetailText,
-                                accessibilityIdentifier: "high-detail-text"
-                            )
-
-                            DetailRow(
-                                iconName: "thermometer.low",
-                                text: viewModel.lowDetailText,
-                                accessibilityIdentifier: "low-detail-text"
-                            )
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            DetailRow(
-                                iconName: "sunrise",
-                                text: viewModel.sunriseText,
-                                accessibilityIdentifier: "sunrise-text"
-                            )
-
-                            DetailRow(
-                                iconName: "sunset.fill",
-                                text: viewModel.sunsetText,
-                                accessibilityIdentifier: "sunset-text"
-                            )
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(MenuDetailColors.detail)
-                    .padding(.top, 4)
-                }
-            }
-            .accessibilityIdentifier("weather-details-disclosure")
 
             Divider()
 
