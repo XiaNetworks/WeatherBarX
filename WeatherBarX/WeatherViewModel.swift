@@ -3,11 +3,17 @@ import Foundation
 import ServiceManagement
 
 struct WeatherSnapshot: Codable, Equatable {
+    struct HourlyTemperature: Codable, Equatable {
+        let time: Date
+        let temperature: Int
+    }
+
     let summary: String
     let temperature: Int?
     let condition: WeatherCondition
     let isDaylight: Bool
     let timezoneIdentifier: String?
+    let currentObservationTime: Date?
     let sunrise: Date?
     let sunset: Date?
     let highTemperature: Int?
@@ -17,6 +23,7 @@ struct WeatherSnapshot: Codable, Equatable {
     let windSpeed: Int?
     let humidity: Int?
     let precipitationChance: Int?
+    let hourlyTemperatures: [HourlyTemperature]
 
     init(
         summary: String,
@@ -24,6 +31,7 @@ struct WeatherSnapshot: Codable, Equatable {
         condition: WeatherCondition,
         isDaylight: Bool,
         timezoneIdentifier: String? = nil,
+        currentObservationTime: Date? = nil,
         sunrise: Date?,
         sunset: Date?,
         highTemperature: Int?,
@@ -32,13 +40,15 @@ struct WeatherSnapshot: Codable, Equatable {
         lowTemperatureAt: Date?,
         windSpeed: Int? = nil,
         humidity: Int? = nil,
-        precipitationChance: Int? = nil
+        precipitationChance: Int? = nil,
+        hourlyTemperatures: [HourlyTemperature] = []
     ) {
         self.summary = summary
         self.temperature = temperature
         self.condition = condition
         self.isDaylight = isDaylight
         self.timezoneIdentifier = timezoneIdentifier
+        self.currentObservationTime = currentObservationTime
         self.sunrise = sunrise
         self.sunset = sunset
         self.highTemperature = highTemperature
@@ -48,6 +58,7 @@ struct WeatherSnapshot: Codable, Equatable {
         self.windSpeed = windSpeed
         self.humidity = humidity
         self.precipitationChance = precipitationChance
+        self.hourlyTemperatures = hourlyTemperatures
     }
 
     static let placeholder = WeatherSnapshot(
@@ -213,6 +224,12 @@ struct OpenMeteoWeatherService: WeatherServing {
             weatherCode: payload.current.weatherCode,
             isDaylight: isDaylight
         )
+        let hourlyTemperatures = payload.hourly.temperatureSeries(in: payload.timezone).map {
+            WeatherSnapshot.HourlyTemperature(
+                time: $0.time,
+                temperature: roundedTemperature(from: $0.temperature)
+            )
+        }
         let extrema = payload.hourly.dailyExtrema(in: payload.timezone)
         let precipitationChance = payload.hourly.currentPrecipitationProbability(
             at: payload.currentDate,
@@ -225,6 +242,7 @@ struct OpenMeteoWeatherService: WeatherServing {
             condition: condition,
             isDaylight: isDaylight,
             timezoneIdentifier: payload.timezone,
+            currentObservationTime: payload.currentDate,
             sunrise: payload.sunriseDate,
             sunset: payload.sunsetDate,
             highTemperature: extrema.high.map { roundedTemperature(from: $0.temperature) },
@@ -233,7 +251,8 @@ struct OpenMeteoWeatherService: WeatherServing {
             lowTemperatureAt: extrema.low?.time,
             windSpeed: payload.current.windSpeed.map(roundedTemperature(from:)),
             humidity: payload.current.relativeHumidity.map(roundedTemperature(from:)),
-            precipitationChance: precipitationChance.map(roundedTemperature(from:))
+            precipitationChance: precipitationChance.map(roundedTemperature(from:)),
+            hourlyTemperatures: hourlyTemperatures
         )
     }
 }
@@ -340,7 +359,7 @@ struct OpenMeteoForecastResponse: Decodable {
         let precipitationProbability: [Double]
 
         func dailyExtrema(in timezone: String) -> (high: Entry?, low: Entry?) {
-            let entries = parsedEntries(in: timezone)
+            let entries = temperatureSeries(in: timezone)
             guard let first = entries.first else {
                 return (nil, nil)
             }
@@ -360,7 +379,7 @@ struct OpenMeteoForecastResponse: Decodable {
             return (high, low)
         }
 
-        private func parsedEntries(in timezone: String) -> [Entry] {
+        func temperatureSeries(in timezone: String) -> [Entry] {
             zip(time, temperature).compactMap { rawTime, value in
                 guard let date = OpenMeteoForecastResponse.localDate(from: rawTime, timezone: timezone) else {
                     return nil
@@ -575,6 +594,28 @@ private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProvi
 
 @MainActor
 final class WeatherViewModel: ObservableObject {
+    struct TemperatureChartPoint: Identifiable, Equatable {
+        let time: Date
+        let temperature: Int
+
+        var id: Date { time }
+    }
+
+    struct TimeMarker: Identifiable, Equatable {
+        enum Kind: Equatable {
+            case sunrise
+            case current
+            case sunset
+        }
+
+        let kind: Kind
+        let time: Date
+
+        var id: String {
+            "\(kind)-\(time.timeIntervalSince1970)"
+        }
+    }
+
     @Published var isMenuPresented = false
     @Published private(set) var isLoading: Bool
     @Published private(set) var snapshot: WeatherSnapshot
@@ -794,6 +835,68 @@ final class WeatherViewModel: ObservableObject {
         formatLastCheckText(referenceDate: now())
     }
 
+    var temperatureChartPoints: [TemperatureChartPoint] {
+        snapshot.hourlyTemperatures.map { point in
+            TemperatureChartPoint(time: point.time, temperature: displayTemperatureValue(point.temperature))
+        }
+    }
+
+    var temperatureChartTimeMarkers: [TimeMarker] {
+        [
+            snapshot.sunrise.map { TimeMarker(kind: .sunrise, time: $0) },
+            snapshot.currentObservationTime.map { TimeMarker(kind: .current, time: $0) },
+            snapshot.sunset.map { TimeMarker(kind: .sunset, time: $0) },
+        ]
+        .compactMap { $0 }
+        .sorted { $0.time < $1.time }
+    }
+
+    var temperatureChartHigh: Int? {
+        snapshot.highTemperature.map(displayTemperatureValue(_:))
+    }
+
+    var temperatureChartHighAt: Date? {
+        snapshot.highTemperatureAt
+    }
+
+    var temperatureChartLow: Int? {
+        snapshot.lowTemperature.map(displayTemperatureValue(_:))
+    }
+
+    var temperatureChartLowAt: Date? {
+        snapshot.lowTemperatureAt
+    }
+
+    var temperatureChartXDomain: ClosedRange<Date>? {
+        let calendar = chartCalendar
+        let referenceDate = snapshot.currentObservationTime
+            ?? snapshot.hourlyTemperatures.first?.time
+            ?? snapshot.sunrise
+            ?? snapshot.sunset
+
+        guard
+            let referenceDate,
+            let startOfDay = calendar.startOfDay(for: referenceDate) as Date?,
+            let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: startOfDay)
+        else {
+            return nil
+        }
+
+        return startOfDay ... endOfDay
+    }
+
+    var temperatureChartYDomain: ClosedRange<Double>? {
+        let values = temperatureChartPoints.map(\.temperature)
+        guard !values.isEmpty else {
+            return nil
+        }
+
+        let low = Double(values.min() ?? 0)
+        let high = Double(values.max() ?? 0)
+        let padding = max(2, ceil((high - low) * 0.1))
+        return (low - padding) ... (high + padding)
+    }
+
     var isRefreshButtonEnabled: Bool {
         isRefreshButtonEnabled(at: now())
     }
@@ -997,6 +1100,41 @@ final class WeatherViewModel: ObservableObject {
 
     func formatPrecipitationText() -> String {
         "Precipitation: \(formatPercent(snapshot.precipitationChance))"
+    }
+
+    func temperatureChartMarkerLabel(for marker: TimeMarker) -> String {
+        switch marker.kind {
+        case .sunrise:
+            return "Sunrise"
+        case .current:
+            return "Now"
+        case .sunset:
+            return "Sunset"
+        }
+    }
+
+    func temperatureChartValueText(_ value: Int?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(value)°"
+    }
+
+    func temperatureChartTimeText(_ date: Date) -> String {
+        let formatter = Self.makeChartMarkerTimeFormatter(timeZoneIdentifier: snapshot.timezoneIdentifier)
+        return formatter.string(from: date)
+    }
+
+    func temperatureChartHourLabelText(_ date: Date) -> String {
+        let hour = chartCalendar.component(.hour, from: date)
+
+        if hour == 12 {
+            return "Noon"
+        }
+
+        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        return "\(displayHour)"
     }
 
     private func formatPercent(_ value: Int?) -> String {
@@ -1241,15 +1379,16 @@ final class WeatherViewModel: ObservableObject {
             return "--"
         }
 
-        let displayValue: Int
+        return "\(displayTemperatureValue(value))°"
+    }
+
+    private func displayTemperatureValue(_ value: Int) -> Int {
         switch temperatureUnit {
         case .fahrenheit:
-            displayValue = value
+            return value
         case .celsius:
-            displayValue = Int((((Double(value) - 32) * 5) / 9).rounded())
+            return Int((((Double(value) - 32) * 5) / 9).rounded())
         }
-
-        return "\(displayValue)°"
     }
 
     private func formatTime(_ value: Date?, using formatter: DateFormatter? = nil) -> String {
@@ -1270,5 +1409,25 @@ final class WeatherViewModel: ObservableObject {
             formatter.timeZone = timeZone
         }
         return formatter
+    }
+
+    private static func makeChartMarkerTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.dateStyle = .none
+        formatter.dateFormat = "h:mm"
+        if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            formatter.timeZone = timeZone
+        }
+        return formatter
+    }
+
+    private var chartCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let timeZoneIdentifier = snapshot.timezoneIdentifier,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            calendar.timeZone = timeZone
+        }
+        return calendar
     }
 }

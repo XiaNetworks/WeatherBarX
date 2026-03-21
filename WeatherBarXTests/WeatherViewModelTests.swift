@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import WeatherBarX
 
 private final class FixtureBundleToken {}
@@ -38,6 +39,10 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.lowTemperatureAt.map(formatter.string(from:)), "3:00 AM")
         XCTAssertEqual(snapshot.sunrise.map(formatter.string(from:)), "7:15 AM")
         XCTAssertEqual(snapshot.sunset.map(formatter.string(from:)), "7:05 PM")
+        XCTAssertEqual(snapshot.currentObservationTime.map(formatter.string(from:)), "2:00 PM")
+        XCTAssertEqual(snapshot.hourlyTemperatures.count, 8)
+        XCTAssertEqual(snapshot.hourlyTemperatures.first?.temperature, 61)
+        XCTAssertEqual(snapshot.hourlyTemperatures.last?.temperature, 68)
     }
 
     func testSunriseSunsetPayloadUsesDayIconDuringDaylight() throws {
@@ -519,6 +524,81 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.highDetailText, "High: 24° at --")
         XCTAssertEqual(viewModel.lowDetailText, "Low: 18° at --")
         XCTAssertEqual(viewModel.windInlineText, "--")
+    }
+
+    func testTemperatureChartPointsConvertWithSelectedUnit() {
+        let lowTime = Date(timeIntervalSince1970: 1_731_447_600)
+        let currentTime = Date(timeIntervalSince1970: 1_731_451_200)
+        let highTime = Date(timeIntervalSince1970: 1_731_454_800)
+        let snapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 72,
+            condition: .cloudy,
+            isDaylight: true,
+            timezoneIdentifier: "America/New_York",
+            currentObservationTime: currentTime,
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: 76,
+            highTemperatureAt: highTime,
+            lowTemperature: 64,
+            lowTemperatureAt: lowTime,
+            hourlyTemperatures: [
+                .init(time: lowTime, temperature: 64),
+                .init(time: currentTime, temperature: 72),
+                .init(time: highTime, temperature: 76),
+            ]
+        )
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertEqual(viewModel.temperatureChartPoints.map(\.temperature), [64, 72, 76])
+        XCTAssertEqual(viewModel.temperatureChartHigh, 76)
+        XCTAssertEqual(viewModel.temperatureChartHighAt, highTime)
+        XCTAssertEqual(viewModel.temperatureChartLow, 64)
+        XCTAssertEqual(viewModel.temperatureChartLowAt, lowTime)
+
+        viewModel.toggleTemperatureUnit()
+
+        XCTAssertEqual(viewModel.temperatureChartPoints.map(\.temperature), [18, 22, 24])
+        XCTAssertEqual(viewModel.temperatureChartHigh, 24)
+        XCTAssertEqual(viewModel.temperatureChartHighAt, highTime)
+        XCTAssertEqual(viewModel.temperatureChartLow, 18)
+        XCTAssertEqual(viewModel.temperatureChartLowAt, lowTime)
+    }
+
+    func testTemperatureChartLabelAlignmentUsesLeadingNearLeftEdge() {
+        let alignment = TemperatureChartLabelAlignmentResolver.alignment(
+            forRunStartingAt: 0,
+            endingAt: 0,
+            pointCount: 8
+        )
+
+        XCTAssertEqual(alignment, .leading)
+    }
+
+    func testTemperatureChartLabelAlignmentUsesTrailingNearRightEdge() {
+        let alignment = TemperatureChartLabelAlignmentResolver.alignment(
+            forRunStartingAt: 6,
+            endingAt: 7,
+            pointCount: 8
+        )
+
+        XCTAssertEqual(alignment, .trailing)
+    }
+
+    func testTemperatureChartLabelAlignmentUsesCenterAwayFromEdges() {
+        let alignment = TemperatureChartLabelAlignmentResolver.alignment(
+            forRunStartingAt: 3,
+            endingAt: 4,
+            pointCount: 8
+        )
+
+        XCTAssertEqual(alignment, .center)
     }
 
     func testPlaceholderStateProducesExpectedStatusItemValues() {
