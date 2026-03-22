@@ -356,6 +356,15 @@ private struct PrecipitationWindChartView: View {
                     yDomain: 0 ... 100
                 )
             }
+            .overlay(alignment: .topLeading) {
+                GeometryReader { geometry in
+                    WindAxisOverlay(
+                        labels: windAxisOverlayLabels,
+                        plotFrame: plotFrame,
+                        containerSize: geometry.size
+                    )
+                }
+            }
             .chartPlotStyle { plotArea in
                 plotArea
                     .background(Color.primary.opacity(0.04))
@@ -398,16 +407,6 @@ private struct PrecipitationWindChartView: View {
                     AxisValueLabel {
                         if let amount = axisValue(from: value) {
                             Text("\(amount)")
-                                .font(.system(size: 9))
-                        }
-                    }
-                }
-
-                AxisMarks(position: .trailing, values: leftAxisTicks) { value in
-                    AxisTick()
-                    AxisValueLabel {
-                        if let amount = axisValue(from: value) {
-                            Text(windAxisLabel(for: amount))
                                 .font(.system(size: 9))
                         }
                     }
@@ -524,16 +523,16 @@ private struct PrecipitationWindChartView: View {
     }
 
     private func normalizedWindValue(for windValue: Int) -> Double {
-        guard let windDomain else {
+        guard let windScale = readableWindScale else {
             return 0
         }
 
-        let range = windDomain.upperBound - windDomain.lowerBound
+        let range = windScale.upperBound - windScale.lowerBound
         guard range > 0 else {
             return 50
         }
 
-        return ((Double(windValue) - windDomain.lowerBound) / range) * 100
+        return ((Double(windValue) - windScale.lowerBound) / range) * 100
     }
 
     private func xPosition(for date: Date) -> CGFloat? {
@@ -563,13 +562,55 @@ private struct PrecipitationWindChartView: View {
     }
 
     private func windAxisLabel(for precipitationScaleValue: Int) -> String {
-        guard let windDomain else {
+        guard let windScale = readableWindScale else {
             return "--"
         }
 
         let fraction = Double(precipitationScaleValue) / 100
-        let windValue = windDomain.lowerBound + ((windDomain.upperBound - windDomain.lowerBound) * fraction)
+        let windValue = windScale.lowerBound + ((windScale.upperBound - windScale.lowerBound) * fraction)
         return String(Int(windValue.rounded()))
+    }
+
+    private var windAxisOverlayLabels: [(text: String, fraction: CGFloat)] {
+        guard let windScale = readableWindScale else {
+            return leftAxisTicks.map { tick in
+                (text: windAxisLabel(for: tick), fraction: CGFloat(Double(tick) / 100))
+            }
+        }
+
+        return windScale.ticks.map { tick in
+            let fraction = (Double(tick) - windScale.lowerBound) / (windScale.upperBound - windScale.lowerBound)
+            return (text: String(tick), fraction: CGFloat(fraction))
+        }
+    }
+
+    private var readableWindScale: ReadableWindScale? {
+        let values = windPoints.map(\.temperature)
+        guard !values.isEmpty else {
+            return nil
+        }
+
+        let maximum = Double(values.max() ?? 0)
+        let step = niceWindStep(for: maximum / 5)
+        let upperBound = max(step * 5, step)
+        let ticks = stride(from: 0.0, through: upperBound, by: step).map { Int($0.rounded()) }
+
+        return ReadableWindScale(
+            lowerBound: 0,
+            upperBound: upperBound,
+            ticks: ticks
+        )
+    }
+
+    private func niceWindStep(for rawStep: Double) -> Double {
+        let preferredSteps: [Double] = [
+            1, 2, 3, 4, 5, 6, 8,
+            10, 12, 15, 20, 25, 30,
+            40, 50, 60, 80, 100
+        ]
+
+        let minimumStep = max(rawStep, 1)
+        return preferredSteps.first(where: { $0 >= minimumStep }) ?? ceil(minimumStep / 10) * 10
     }
 
     private var chartCalendar: Calendar {
@@ -579,6 +620,36 @@ private struct PrecipitationWindChartView: View {
             calendar.timeZone = timeZone
         }
         return calendar
+    }
+}
+
+private struct ReadableWindScale {
+    let lowerBound: Double
+    let upperBound: Double
+    let ticks: [Int]
+}
+
+private struct WindAxisOverlay: View {
+    let labels: [(text: String, fraction: CGFloat)]
+    let plotFrame: CGRect
+    let containerSize: CGSize
+
+    var body: some View {
+        if plotFrame != .zero, containerSize != .zero {
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                    Text(label.text)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .position(
+                            x: max(plotFrame.minX + 8, plotFrame.maxX - 10),
+                            y: plotFrame.maxY - (plotFrame.height * label.fraction)
+                        )
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 
