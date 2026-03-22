@@ -18,6 +18,8 @@
 		A00000000000000000000019 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* XCTest.framework */; };
 		A0000000000000000000001A /* WeatherBarXUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* WeatherBarXUITests.swift */; };
 		A0000000000000000000001B /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* XCTest.framework */; };
+		A0000000000000000000006D /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000006E /* AppLocalization.swift */; };
+		A0000000000000000000006F /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000007D /* Localizable.strings */; };
 		A0000000000000000000001C /* current-cloudy-day.json in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001D /* current-cloudy-day.json */; };
 		A0000000000000000000001E /* current-clear-day.json in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* current-clear-day.json */; };
 		A00000000000000000000060 /* current-clear-night.json in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000063 /* current-clear-night.json */; };
@@ -58,6 +60,8 @@
 		A0000000000000000000000B /* WeatherBarX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WeatherBarX.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000000C /* WeatherBarXTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeatherBarXTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000000D /* WeatherBarXUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeatherBarXUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A0000000000000000000006E /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
+		A0000000000000000000007D /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		A0000000000000000000001D /* current-cloudy-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-cloudy-day.json"; sourceTree = "<group>"; };
 		A0000000000000000000001F /* current-clear-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-clear-day.json"; sourceTree = "<group>"; };
 		A00000000000000000000063 /* current-clear-night.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-clear-night.json"; sourceTree = "<group>"; };
@@ -113,7 +117,9 @@
 				A00000000000000000000003 /* WeatherSettings.swift */,
 				A00000000000000000000004 /* WeatherViewModel.swift */,
 				A00000000000000000000005 /* MenuContentView.swift */,
+				A0000000000000000000006E /* AppLocalization.swift */,
 				A00000000000000000000006 /* StatusItemTestHarnessView.swift */,
+				A0000000000000000000007D /* Localizable.strings */,
 				A00000000000000000000007 /* Assets.xcassets */,
 			);
 			path = WeatherBarX;
@@ -273,6 +279,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000017 /* Assets.xcassets in Resources */,
+				A0000000000000000000006F /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -309,6 +316,7 @@
 				A00000000000000000000013 /* WeatherSettings.swift in Sources */,
 				A00000000000000000000014 /* WeatherViewModel.swift in Sources */,
 				A00000000000000000000015 /* MenuContentView.swift in Sources */,
+				A0000000000000000000006D /* AppLocalization.swift in Sources */,
 				A00000000000000000000016 /* StatusItemTestHarnessView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

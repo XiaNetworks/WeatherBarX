@@ -32,11 +32,11 @@ private enum AddLocationMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .manual:
-            return "Manual"
+            return L10n.tr("Manual")
         case .detect:
-            return "Detect"
+            return L10n.tr("Detect")
         case .search:
-            return "Search"
+            return L10n.tr("Search")
         }
     }
 }
@@ -134,9 +134,9 @@ private enum TemperatureTrendCardTab: String {
     var title: String {
         switch self {
         case .today:
-            return "Today's Temperatures"
+            return L10n.tr("Today's Temperatures")
         case .next24Hours:
-            return "Next 24 Hours"
+            return L10n.tr("Next 24 Hours")
         }
     }
 }
@@ -216,7 +216,7 @@ private struct TemperatureTrendDetailsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption.weight(.semibold))
-                    Text("Details")
+                    Text(L10n.tr("Details"))
                         .font(.subheadline.weight(.semibold))
                 }
                 .foregroundStyle(.secondary)
@@ -422,7 +422,7 @@ private struct PrecipitationWindChartView: View {
                 Circle()
                     .fill(Color.red)
                     .frame(width: 6, height: 6)
-                Text("Precipitation")
+                Text(L10n.tr("Precipitation"))
                     .foregroundStyle(.secondary)
             }
 
@@ -430,7 +430,7 @@ private struct PrecipitationWindChartView: View {
                 Circle()
                     .fill(Color.blue)
                     .frame(width: 6, height: 6)
-                Text("Wind")
+                Text(L10n.tr("Wind"))
                     .foregroundStyle(.secondary)
             }
         }
@@ -659,7 +659,7 @@ private struct NextTenDayForecastCardView: View {
     let dateText: (Date) -> String
 
     var body: some View {
-        WeatherCard(title: "Next 5 Days") {
+        WeatherCard(title: L10n.tr("Next 5 Days")) {
             HStack(alignment: .top, spacing: 2) {
                 ForEach(forecasts) { forecast in
                     forecastTile(for: forecast)
@@ -1653,7 +1653,7 @@ struct MenuContentView: View {
                     isShowingDetails: $isShowingWeatherDetails,
                     selectedTab: $selectedTemperatureChartTab,
                     todayModel: TemperatureTrendCardModel(
-                        title: "Today's Temperatures",
+                        title: L10n.tr("Today's Temperatures"),
                         points: viewModel.temperatureChartPoints,
                         high: viewModel.temperatureChartHigh,
                         highAt: viewModel.temperatureChartHighAt,
@@ -1675,7 +1675,7 @@ struct MenuContentView: View {
                         )
                     ),
                     next24HourModel: viewModel.next24HourTemperatureChartPoints.isEmpty ? nil : TemperatureTrendCardModel(
-                        title: "Next 24 Hours",
+                        title: L10n.tr("Next 24 Hours"),
                         points: viewModel.next24HourTemperatureChartPoints,
                         high: viewModel.next24HourTemperatureChartHigh,
                         highAt: viewModel.next24HourTemperatureChartHighAt,
@@ -1704,7 +1704,7 @@ struct MenuContentView: View {
             if !viewModel.next24HourPrecipitationChartPoints.isEmpty && !viewModel.next24HourWindChartPoints.isEmpty {
                 WeatherCard(title: "") {
                     PrecipitationWindChartView(
-                        title: "Next 24 Hours",
+                        title: L10n.tr("Next 24 Hours"),
                         precipitationPoints: viewModel.next24HourPrecipitationChartPoints,
                         windPoints: viewModel.next24HourWindChartPoints,
                         markers: viewModel.next24HourWindChartTimeMarkers,
@@ -1741,7 +1741,7 @@ struct MenuContentView: View {
                     Spacer()
 
                     Button(action: onRefresh) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
+                        Label(L10n.tr("Refresh"), systemImage: "arrow.clockwise")
                             .labelStyle(.titleAndIcon)
                     }
                     .buttonStyle(.bordered)
@@ -1758,7 +1758,7 @@ struct MenuContentView: View {
                 HStack(spacing: 8) {
                     Button(action: onQuit) {
                         HStack(spacing: 8) {
-                            Text("Quit")
+                            Text(L10n.tr("Quit"))
                             Text("⌘Q")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
@@ -1851,7 +1851,7 @@ struct MenuContentView: View {
         } catch let error as LocationInputError {
             addLocationError = error.errorDescription
         } catch {
-            addLocationError = "Unable to save location."
+            addLocationError = L10n.tr("Unable to save location.")
         }
     }
 
@@ -1879,7 +1879,7 @@ struct MenuContentView: View {
                 }
             } catch {
                 await MainActor.run {
-                    addLocationError = "Unable to determine your current location."
+                    addLocationError = L10n.tr("Unable to determine your current location.")
                     isDetectingLocation = false
                 }
             }
@@ -1910,7 +1910,7 @@ struct MenuContentView: View {
                 }
             } catch {
                 await MainActor.run {
-                    addLocationError = "Unable to find that location."
+                    addLocationError = L10n.tr("Unable to find that location.")
                     isSearchingLocation = false
                 }
             }
@@ -1929,7 +1929,7 @@ struct MenuContentView: View {
         } catch let error as LocationInputError {
             addLocationError = error.errorDescription
         } catch {
-            addLocationError = "Unable to save location."
+            addLocationError = L10n.tr("Unable to save location.")
         }
     }
 
@@ -1945,7 +1945,7 @@ struct MenuContentView: View {
         } catch let error as LocationInputError {
             addLocationError = error.errorDescription
         } catch {
-            addLocationError = "Unable to save location."
+            addLocationError = L10n.tr("Unable to save location.")
         }
     }
 }

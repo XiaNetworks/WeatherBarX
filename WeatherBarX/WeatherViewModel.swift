@@ -631,7 +631,7 @@ struct LocationSlot: Identifiable, Equatable {
     var id: Int { index }
 
     var title: String {
-        location?.name ?? "Add Location"
+        location?.name ?? L10n.tr("Add Location")
     }
 
     var isEmpty: Bool {
@@ -649,13 +649,13 @@ enum LocationInputError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .emptyName:
-            return "Enter a location name."
+            return L10n.tr("Enter a location name.")
         case .invalidLatitude:
-            return "Enter a latitude between -90 and 90."
+            return L10n.tr("Enter a latitude between -90 and 90.")
         case .invalidLongitude:
-            return "Enter a longitude between -180 and 180."
+            return L10n.tr("Enter a longitude between -180 and 180.")
         case .invalidSlot:
-            return "Unable to save this location slot."
+            return L10n.tr("Unable to save this location slot.")
         case .detectionFailed(let message):
             return message
         }
@@ -668,12 +668,12 @@ private struct GeocodedSearchLocationProvider: SearchLocationProviding {
     func searchLocation(query: String) async throws -> SavedLocation {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
-            throw LocationInputError.detectionFailed("Enter a ZIP code or city name to search.")
+            throw LocationInputError.detectionFailed(L10n.tr("Enter a ZIP code or city name to search."))
         }
 
         let placemarks = try await geocoder.geocodeAddressString(trimmedQuery)
         guard let placemark = placemarks.first, let location = placemark.location else {
-            throw LocationInputError.detectionFailed("No matching location was found.")
+            throw LocationInputError.detectionFailed(L10n.tr("No matching location was found."))
         }
 
         let name = CurrentDeviceLocationProvider.locationName(from: placemark, coordinate: location.coordinate)
@@ -708,7 +708,7 @@ private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProvi
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
         case .restricted, .denied:
-            throw LocationInputError.detectionFailed("Allow location access in System Settings to detect your current location.")
+            throw LocationInputError.detectionFailed(L10n.tr("Allow location access in System Settings to detect your current location."))
         default:
             break
         }
@@ -721,7 +721,7 @@ private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProvi
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.first else {
-            continuation?.resume(throwing: LocationInputError.detectionFailed("Unable to determine your current location."))
+            continuation?.resume(throwing: LocationInputError.detectionFailed(L10n.tr("Unable to determine your current location.")))
             continuation = nil
             return
         }
@@ -731,13 +731,13 @@ private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProvi
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        continuation?.resume(throwing: LocationInputError.detectionFailed("Unable to determine your current location."))
+        continuation?.resume(throwing: LocationInputError.detectionFailed(L10n.tr("Unable to determine your current location.")))
         continuation = nil
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
-            continuation?.resume(throwing: LocationInputError.detectionFailed("Allow location access in System Settings to detect your current location."))
+            continuation?.resume(throwing: LocationInputError.detectionFailed(L10n.tr("Allow location access in System Settings to detect your current location.")))
             continuation = nil
         }
     }
@@ -897,7 +897,7 @@ final class WeatherViewModel: ObservableObject {
 
     var summaryText: String {
         if isLoading {
-            return "Loading weather..."
+            return L10n.tr("Loading weather...")
         }
 
         return snapshot.summary
@@ -916,7 +916,7 @@ final class WeatherViewModel: ObservableObject {
     }
 
     var launchAtLoginButtonText: String {
-        "Start at Login"
+        L10n.tr("Start at Login")
     }
 
     var conditionIconName: String {
@@ -925,23 +925,23 @@ final class WeatherViewModel: ObservableObject {
 
     var highDetailText: String {
         if isLoading {
-            return "High: -- at --"
+            return L10n.tr("High: -- at --")
         }
 
-        return "High: \(formatTemperature(snapshot.highTemperature)) at \(formatTime(snapshot.highTemperatureAt))"
+        return L10n.format("High: %@ at %@", formatTemperature(snapshot.highTemperature), formatTime(snapshot.highTemperatureAt))
     }
 
     var lowDetailText: String {
         if isLoading {
-            return "Low: -- at --"
+            return L10n.tr("Low: -- at --")
         }
 
-        return "Low: \(formatTemperature(snapshot.lowTemperature)) at \(formatTime(snapshot.lowTemperatureAt))"
+        return L10n.format("Low: %@ at %@", formatTemperature(snapshot.lowTemperature), formatTime(snapshot.lowTemperatureAt))
     }
 
     var sunriseText: String {
         if isLoading {
-            return "Sunrise: --"
+            return L10n.tr("Sunrise: --")
         }
 
         return formatSunriseText()
@@ -949,7 +949,7 @@ final class WeatherViewModel: ObservableObject {
 
     var sunsetText: String {
         if isLoading {
-            return "Sunset: --"
+            return L10n.tr("Sunset: --")
         }
 
         return formatSunsetText()
@@ -957,39 +957,39 @@ final class WeatherViewModel: ObservableObject {
 
     var next24HourHighDetailText: String {
         if isLoading {
-            return "High: -- at --"
+            return L10n.tr("High: -- at --")
         }
 
-        return "High: \(temperatureChartValueText(next24HourTemperatureChartHigh)) at \(formatRelativeDayTime(next24HourTemperatureChartHighAt))"
+        return L10n.format("High: %@ at %@", temperatureChartValueText(next24HourTemperatureChartHigh), formatRelativeDayTime(next24HourTemperatureChartHighAt))
     }
 
     var next24HourLowDetailText: String {
         if isLoading {
-            return "Low: -- at --"
+            return L10n.tr("Low: -- at --")
         }
 
-        return "Low: \(temperatureChartValueText(next24HourTemperatureChartLow)) at \(formatRelativeDayTime(next24HourTemperatureChartLowAt))"
+        return L10n.format("Low: %@ at %@", temperatureChartValueText(next24HourTemperatureChartLow), formatRelativeDayTime(next24HourTemperatureChartLowAt))
     }
 
     var next24HourSunriseText: String {
         if isLoading {
-            return "Sunrise: --"
+            return L10n.tr("Sunrise: --")
         }
 
-        return "Sunrise: \(formatRelativeDayTime(next24HourSunriseTime))"
+        return L10n.format("Sunrise: %@", formatRelativeDayTime(next24HourSunriseTime))
     }
 
     var next24HourSunsetText: String {
         if isLoading {
-            return "Sunset: --"
+            return L10n.tr("Sunset: --")
         }
 
-        return "Sunset: \(formatRelativeDayTime(next24HourSunsetTime))"
+        return L10n.format("Sunset: %@", formatRelativeDayTime(next24HourSunsetTime))
     }
 
     var windText: String {
         if isLoading {
-            return "Wind: --"
+            return L10n.tr("Wind: --")
         }
 
         return formatWindText()
@@ -997,7 +997,7 @@ final class WeatherViewModel: ObservableObject {
 
     var humidityText: String {
         if isLoading {
-            return "Humidity: --"
+            return L10n.tr("Humidity: --")
         }
 
         return formatHumidityText()
@@ -1005,7 +1005,7 @@ final class WeatherViewModel: ObservableObject {
 
     var precipitationText: String {
         if isLoading {
-            return "Precipitation: --"
+            return L10n.tr("Precipitation: --")
         }
 
         return formatPrecipitationText()
@@ -1230,20 +1230,20 @@ final class WeatherViewModel: ObservableObject {
 
     func refreshButtonHelpText(at referenceDate: Date) -> String {
         if isLoading {
-            return "Weather is currently loading."
+            return L10n.tr("Weather is currently loading.")
         }
 
         guard let lastCheckAt else {
-            return "Refresh weather"
+            return L10n.tr("Refresh weather")
         }
 
         let secondsSinceLastCheck = referenceDate.timeIntervalSince(lastCheckAt)
         if secondsSinceLastCheck < 60 {
             let remainingSeconds = max(1, Int((60 - secondsSinceLastCheck).rounded(.up)))
-            return "Refresh available in \(remainingSeconds) seconds."
+            return L10n.format("Refresh available in %lld seconds.", remainingSeconds)
         }
 
-        return "Refresh weather"
+        return L10n.tr("Refresh weather")
     }
 
     func refreshWeather() async {
@@ -1385,46 +1385,46 @@ final class WeatherViewModel: ObservableObject {
 
     func formatLastCheckText(referenceDate: Date? = nil, using formatter: DateFormatter? = nil) -> String {
         guard let lastCheckAt else {
-            return "Last checked: --"
+            return L10n.tr("Last checked: --")
         }
 
         let referenceDate = referenceDate ?? now()
         if referenceDate.timeIntervalSince(lastCheckAt) < 60 {
-            return "Last checked: <1 min ago"
+            return L10n.tr("Last checked: <1 min ago")
         }
 
         let formatter = formatter ?? Self.makeTimeFormatter(timeZoneIdentifier: nil)
-        return "Last checked: \(formatter.string(from: lastCheckAt))"
+        return L10n.format("Last checked: %@", formatter.string(from: lastCheckAt))
     }
 
     func formatSunriseText(using formatter: DateFormatter? = nil) -> String {
-        "Sunrise: \(formatTime(snapshot.sunrise, using: formatter))"
+        L10n.format("Sunrise: %@", formatTime(snapshot.sunrise, using: formatter))
     }
 
     func formatSunsetText(using formatter: DateFormatter? = nil) -> String {
-        "Sunset: \(formatTime(snapshot.sunset, using: formatter))"
+        L10n.format("Sunset: %@", formatTime(snapshot.sunset, using: formatter))
     }
 
     func formatWindText() -> String {
-        "Wind: \(formatWindSpeedValue())"
+        L10n.format("Wind: %@", formatWindSpeedValue())
     }
 
     func formatHumidityText() -> String {
-        "Humidity: \(formatPercent(snapshot.humidity))"
+        L10n.format("Humidity: %@", formatPercent(snapshot.humidity))
     }
 
     func formatPrecipitationText() -> String {
-        "Precipitation: \(formatPercent(snapshot.precipitationChance))"
+        L10n.format("Precipitation: %@", formatPercent(snapshot.precipitationChance))
     }
 
     func temperatureChartMarkerLabel(for marker: TimeMarker) -> String {
         switch marker.kind {
         case .sunrise:
-            return "Sunrise"
+            return L10n.tr("Sunrise")
         case .current:
-            return "Now"
+            return L10n.tr("Now")
         case .sunset:
-            return "Sunset"
+            return L10n.tr("Sunset")
         }
     }
 
@@ -1455,9 +1455,9 @@ final class WeatherViewModel: ObservableObject {
     var windChartUnitText: String {
         switch temperatureUnit {
         case .fahrenheit:
-            return "mph"
+            return L10n.tr("mph")
         case .celsius:
-            return "km/h"
+            return L10n.tr("km/h")
         }
     }
 
@@ -1470,11 +1470,11 @@ final class WeatherViewModel: ObservableObject {
         let hour = chartCalendar.component(.hour, from: date)
 
         if hour == 0 {
-            return "Midnight"
+            return L10n.tr("Midnight")
         }
 
         if hour == 12 {
-            return "Noon"
+            return L10n.tr("Noon")
         }
 
         let displayHour = hour > 12 ? hour - 12 : hour
@@ -1513,9 +1513,9 @@ final class WeatherViewModel: ObservableObject {
         let displayedWindSpeed = displayWindSpeedValue(windSpeed)
         switch temperatureUnit {
         case .fahrenheit:
-            return "\(displayedWindSpeed) mph"
+            return "\(displayedWindSpeed) \(L10n.tr("mph"))"
         case .celsius:
-            return "\(displayedWindSpeed) km/h"
+            return "\(displayedWindSpeed) \(L10n.tr("km/h"))"
         }
     }
 
@@ -1837,12 +1837,12 @@ final class WeatherViewModel: ObservableObject {
         }
 
         if chartCalendar.isDate(value, inSameDayAs: referenceDate) {
-            return "\(timeText) Today"
+            return "\(timeText) \(L10n.tr("Today"))"
         }
 
         if let tomorrow = chartCalendar.date(byAdding: .day, value: 1, to: referenceDate),
            chartCalendar.isDate(value, inSameDayAs: tomorrow) {
-            return "\(timeText) Tomorrow"
+            return "\(timeText) \(L10n.tr("Tomorrow"))"
         }
 
         return timeText

@@ -62,27 +62,27 @@ enum WeatherCondition: String, Codable, Equatable {
     var summary: String {
         switch self {
         case .placeholder:
-            return "Placeholder weather"
+            return L10n.tr("Placeholder weather")
         case .networkError:
-            return "Network unavailable"
+            return L10n.tr("Network unavailable")
         case .apiError:
-            return "Weather API unavailable"
+            return L10n.tr("Weather API unavailable")
         case .clear:
-            return "Clear sky"
+            return L10n.tr("Clear sky")
         case .partlyCloudy:
-            return "Partly cloudy"
+            return L10n.tr("Partly cloudy")
         case .cloudy:
-            return "Cloudy"
+            return L10n.tr("Cloudy")
         case .fog:
-            return "Foggy"
+            return L10n.tr("Foggy")
         case .drizzle:
-            return "Drizzle"
+            return L10n.tr("Drizzle")
         case .rain:
-            return "Rain"
+            return L10n.tr("Rain")
         case .snow:
-            return "Snow"
+            return L10n.tr("Snow")
         case .thunderstorm:
-            return "Thunderstorm"
+            return L10n.tr("Thunderstorm")
         }
     }
 }
