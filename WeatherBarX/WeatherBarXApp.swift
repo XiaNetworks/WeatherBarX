@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let defaults = UserDefaults(suiteName: "WeatherBarXUITesting")!
         defaults.set(true, forKey: WeatherSettings.usesPlaceholderWeatherKey)
+        defaults.set(["en"], forKey: "AppleLanguages")
 
         let viewModel = WeatherViewModel(
             defaults: defaults,

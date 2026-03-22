@@ -21,6 +21,35 @@ private func fixture(named name: String) -> Data {
 
 @MainActor
 final class WeatherViewModelTests: XCTestCase {
+    private var originalAppleLanguages: Any?
+    private var originalAppleLocale: Any?
+
+    override func setUp() {
+        super.setUp()
+        let defaults = UserDefaults.standard
+        originalAppleLanguages = defaults.object(forKey: "AppleLanguages")
+        originalAppleLocale = defaults.object(forKey: "AppleLocale")
+        defaults.set(["en"], forKey: "AppleLanguages")
+        defaults.set("en_US_POSIX", forKey: "AppleLocale")
+    }
+
+    override func tearDown() {
+        let defaults = UserDefaults.standard
+        if let originalAppleLanguages {
+            defaults.set(originalAppleLanguages, forKey: "AppleLanguages")
+        } else {
+            defaults.removeObject(forKey: "AppleLanguages")
+        }
+        if let originalAppleLocale {
+            defaults.set(originalAppleLocale, forKey: "AppleLocale")
+        } else {
+            defaults.removeObject(forKey: "AppleLocale")
+        }
+        originalAppleLanguages = nil
+        originalAppleLocale = nil
+        super.tearDown()
+    }
+
     func testJSONResponseDecodesIntoWeatherModelCorrectly() throws {
         let snapshot = try OpenMeteoWeatherService.decodeSnapshot(from: fixture(named: "current-cloudy-day"))
 

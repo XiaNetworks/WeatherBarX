@@ -1483,7 +1483,7 @@ final class WeatherViewModel: ObservableObject {
 
     func next10DayLabelText(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
+        formatter.locale = Self.appLocale
         formatter.timeZone = chartCalendar.timeZone
         formatter.dateFormat = "E"
         return formatter.string(from: date)
@@ -1491,7 +1491,7 @@ final class WeatherViewModel: ObservableObject {
 
     func next10DayDateText(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
+        formatter.locale = Self.appLocale
         formatter.timeZone = chartCalendar.timeZone
         formatter.dateFormat = "E M/d"
         return formatter.string(from: date)
@@ -1866,7 +1866,7 @@ final class WeatherViewModel: ObservableObject {
 
     private static func makeTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
+        formatter.locale = appLocale
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
@@ -1877,13 +1877,22 @@ final class WeatherViewModel: ObservableObject {
 
     private static func makeChartMarkerTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = Locale.autoupdatingCurrent
+        formatter.locale = appLocale
         formatter.dateStyle = .none
         formatter.dateFormat = "h:mm a"
         if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
             formatter.timeZone = timeZone
         }
         return formatter
+    }
+
+    private static var appLocale: Locale {
+        let processInfo = ProcessInfo.processInfo
+        if processInfo.arguments.contains("--ui-testing") || processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return Locale(identifier: "en_US_POSIX")
+        }
+
+        return Locale.autoupdatingCurrent
     }
 
     private var chartCalendar: Calendar {
