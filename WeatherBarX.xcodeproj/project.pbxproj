@@ -61,7 +61,8 @@
 		A0000000000000000000000C /* WeatherBarXTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeatherBarXTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000000D /* WeatherBarXUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeatherBarXUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000006E /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
-		A0000000000000000000007D /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
+		A0000000000000000000007E /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A0000000000000000000007F /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh-Hans; path = zh-Hans.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A0000000000000000000001D /* current-cloudy-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-cloudy-day.json"; sourceTree = "<group>"; };
 		A0000000000000000000001F /* current-clear-day.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-clear-day.json"; sourceTree = "<group>"; };
 		A00000000000000000000063 /* current-clear-night.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "current-clear-night.json"; sourceTree = "<group>"; };
@@ -259,6 +260,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				zh-Hans,
 				Base,
 			);
 			mainGroup = A00000000000000000000021;
@@ -305,6 +307,18 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		A0000000000000000000007D /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A0000000000000000000007E /* en */,
+				A0000000000000000000007F /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000044 /* Sources */ = {
