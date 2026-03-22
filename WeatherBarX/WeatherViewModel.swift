@@ -3,6 +3,16 @@ import Foundation
 import ServiceManagement
 
 struct WeatherSnapshot: Codable, Equatable {
+    struct DailyForecast: Codable, Equatable, Identifiable {
+        let date: Date
+        let highTemperature: Int
+        let lowTemperature: Int
+        let precipitationProbability: Int
+        let condition: WeatherCondition
+
+        var id: Date { date }
+    }
+
     struct HourlyTemperature: Codable, Equatable {
         let time: Date
         let temperature: Int
@@ -38,6 +48,7 @@ struct WeatherSnapshot: Codable, Equatable {
     let hourlyTemperatures: [HourlyTemperature]
     let hourlyPrecipitationProbabilities: [HourlyPrecipitationProbability]
     let hourlyWindSpeeds: [HourlyWindSpeed]
+    let dailyForecasts: [DailyForecast]
 
     init(
         summary: String,
@@ -59,7 +70,8 @@ struct WeatherSnapshot: Codable, Equatable {
         precipitationChance: Int? = nil,
         hourlyTemperatures: [HourlyTemperature] = [],
         hourlyPrecipitationProbabilities: [HourlyPrecipitationProbability] = [],
-        hourlyWindSpeeds: [HourlyWindSpeed] = []
+        hourlyWindSpeeds: [HourlyWindSpeed] = [],
+        dailyForecasts: [DailyForecast] = []
     ) {
         self.summary = summary
         self.temperature = temperature
@@ -81,6 +93,7 @@ struct WeatherSnapshot: Codable, Equatable {
         self.hourlyTemperatures = hourlyTemperatures
         self.hourlyPrecipitationProbabilities = hourlyPrecipitationProbabilities
         self.hourlyWindSpeeds = hourlyWindSpeeds
+        self.dailyForecasts = dailyForecasts
     }
 
     static let placeholder = WeatherSnapshot(
@@ -183,8 +196,8 @@ struct OpenMeteoWeatherService: WeatherServing {
             URLQueryItem(name: "longitude", value: String(longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"),
             URLQueryItem(name: "hourly", value: "temperature_2m,precipitation_probability,wind_speed_10m"),
-            URLQueryItem(name: "daily", value: "sunrise,sunset"),
-            URLQueryItem(name: "forecast_days", value: "2"),
+            URLQueryItem(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"),
+            URLQueryItem(name: "forecast_days", value: "10"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -264,6 +277,15 @@ struct OpenMeteoWeatherService: WeatherServing {
                 speed: roundedTemperature(from: $0.speed)
             )
         }
+        let dailyForecasts = payload.daily.forecastSeries(in: payload.timezone).map {
+            WeatherSnapshot.DailyForecast(
+                date: $0.date,
+                highTemperature: roundedTemperature(from: $0.highTemperature),
+                lowTemperature: roundedTemperature(from: $0.lowTemperature),
+                precipitationProbability: roundedTemperature(from: $0.precipitationProbability),
+                condition: WeatherCondition(weatherCode: $0.weatherCode, isDaylight: true)
+            )
+        }
         let extrema = payload.hourly.dailyExtrema(
             in: payload.timezone,
             onSameDayAs: payload.currentDate
@@ -293,7 +315,8 @@ struct OpenMeteoWeatherService: WeatherServing {
             precipitationChance: precipitationChance.map(roundedTemperature(from:)),
             hourlyTemperatures: hourlyTemperatures,
             hourlyPrecipitationProbabilities: hourlyPrecipitationProbabilities,
-            hourlyWindSpeeds: hourlyWindSpeeds
+            hourlyWindSpeeds: hourlyWindSpeeds,
+            dailyForecasts: dailyForecasts
         )
     }
 }
@@ -514,18 +537,56 @@ struct OpenMeteoForecastResponse: Decodable {
     }
 
     struct DailyWeather: Decodable {
+        struct ForecastEntry: Equatable {
+            let date: Date
+            let highTemperature: Double
+            let lowTemperature: Double
+            let precipitationProbability: Double
+            let weatherCode: Int
+        }
+
+        let time: [String]
         let sunrise: [String]
         let sunset: [String]
+        let temperatureMax: [Double]
+        let temperatureMin: [Double]
+        let precipitationProbabilityMax: [Double]
+        let weatherCode: [Int]
+
+        func forecastSeries(in timezone: String) -> [ForecastEntry] {
+            zip(time, zip(temperatureMax, zip(temperatureMin, zip(precipitationProbabilityMax, weatherCode)))).compactMap { rawDate, values in
+                guard let date = OpenMeteoForecastResponse.localDay(from: rawDate, timezone: timezone) else {
+                    return nil
+                }
+                return ForecastEntry(
+                    date: date,
+                    highTemperature: values.0,
+                    lowTemperature: values.1.0,
+                    precipitationProbability: values.1.1.0,
+                    weatherCode: values.1.1.1
+                )
+            }
+        }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            time = try container.decodeIfPresent([String].self, forKey: .time) ?? []
             sunrise = try container.decodeIfPresent([String].self, forKey: .sunrise) ?? []
             sunset = try container.decodeIfPresent([String].self, forKey: .sunset) ?? []
+            temperatureMax = try container.decodeIfPresent([Double].self, forKey: .temperatureMax) ?? []
+            temperatureMin = try container.decodeIfPresent([Double].self, forKey: .temperatureMin) ?? []
+            precipitationProbabilityMax = try container.decodeIfPresent([Double].self, forKey: .precipitationProbabilityMax) ?? []
+            weatherCode = try container.decodeIfPresent([Int].self, forKey: .weatherCode) ?? []
         }
 
         private enum CodingKeys: String, CodingKey {
+            case time
             case sunrise
             case sunset
+            case temperatureMax = "temperature_2m_max"
+            case temperatureMin = "temperature_2m_min"
+            case precipitationProbabilityMax = "precipitation_probability_max"
+            case weatherCode = "weather_code"
         }
     }
 
@@ -545,6 +606,18 @@ struct OpenMeteoForecastResponse: Decodable {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        formatter.timeZone = TimeZone(identifier: timezone)
+        return formatter.date(from: value)
+    }
+
+    private static func localDay(from value: String?, timezone: String) -> Date? {
+        guard let value else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: timezone)
         return formatter.date(from: value)
     }
@@ -683,6 +756,16 @@ private final class CurrentDeviceLocationProvider: NSObject, DeviceLocationProvi
 
 @MainActor
 final class WeatherViewModel: ObservableObject {
+    struct DailyForecastChartPoint: Identifiable, Equatable {
+        let date: Date
+        let highTemperature: Int
+        let lowTemperature: Int
+        let precipitationProbability: Int
+        let condition: WeatherCondition
+
+        var id: Date { date }
+    }
+
     struct TemperatureChartPoint: Identifiable, Equatable {
         let time: Date
         let temperature: Int
@@ -1101,6 +1184,30 @@ final class WeatherViewModel: ObservableObject {
         chartYDomain(for: next24HourWindChartPoints)
     }
 
+    var next10DayForecastChartPoints: [DailyForecastChartPoint] {
+        snapshot.dailyForecasts.prefix(5).map { forecast in
+            DailyForecastChartPoint(
+                date: forecast.date,
+                highTemperature: displayTemperatureValue(forecast.highTemperature),
+                lowTemperature: displayTemperatureValue(forecast.lowTemperature),
+                precipitationProbability: forecast.precipitationProbability,
+                condition: forecast.condition
+            )
+        }
+    }
+
+    var next10DayTemperatureChartYDomain: ClosedRange<Double>? {
+        let values = next10DayForecastChartPoints.flatMap { [Double($0.highTemperature), Double($0.lowTemperature)] }
+        guard !values.isEmpty else {
+            return nil
+        }
+
+        let low = values.min() ?? 0
+        let high = values.max() ?? 0
+        let padding = max(2, ceil((high - low) * 0.1))
+        return (low - padding) ... (high + padding)
+    }
+
     var chartTimeZoneIdentifier: String? {
         snapshot.timezoneIdentifier
     }
@@ -1345,6 +1452,15 @@ final class WeatherViewModel: ObservableObject {
         return "\(value)"
     }
 
+    var windChartUnitText: String {
+        switch temperatureUnit {
+        case .fahrenheit:
+            return "mph"
+        case .celsius:
+            return "km/h"
+        }
+    }
+
     func temperatureChartTimeText(_ date: Date) -> String {
         let formatter = Self.makeChartMarkerTimeFormatter(timeZoneIdentifier: snapshot.timezoneIdentifier)
         return formatter.string(from: date)
@@ -1363,6 +1479,22 @@ final class WeatherViewModel: ObservableObject {
 
         let displayHour = hour > 12 ? hour - 12 : hour
         return "\(displayHour)"
+    }
+
+    func next10DayLabelText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.timeZone = chartCalendar.timeZone
+        formatter.dateFormat = "E"
+        return formatter.string(from: date)
+    }
+
+    func next10DayDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.timeZone = chartCalendar.timeZone
+        formatter.dateFormat = "E M/d"
+        return formatter.string(from: date)
     }
 
     private func formatPercent(_ value: Int?) -> String {
@@ -1747,7 +1879,7 @@ final class WeatherViewModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
         formatter.dateStyle = .none
-        formatter.dateFormat = "h:mm"
+        formatter.dateFormat = "h:mm a"
         if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
             formatter.timeZone = timeZone
         }

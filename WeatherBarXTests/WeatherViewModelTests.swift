@@ -747,6 +747,51 @@ final class WeatherViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.next24HourWindChartPoints.map(\.temperature), [19, 16, 23, 14])
     }
 
+    func testNext10DayForecastChartPointsConvertWithSelectedUnit() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        let snapshot = WeatherSnapshot(
+            summary: "Cloudy",
+            temperature: 72,
+            condition: .cloudy,
+            isDaylight: true,
+            timezoneIdentifier: "America/New_York",
+            currentObservationTime: formatter.date(from: "2024-11-11"),
+            sunrise: nil,
+            sunset: nil,
+            highTemperature: nil,
+            highTemperatureAt: nil,
+            lowTemperature: nil,
+            lowTemperatureAt: nil,
+            dailyForecasts: [
+                .init(date: formatter.date(from: "2024-11-11")!, highTemperature: 70, lowTemperature: 55, precipitationProbability: 20, condition: .cloudy),
+                .init(date: formatter.date(from: "2024-11-12")!, highTemperature: 74, lowTemperature: 58, precipitationProbability: 45, condition: .rain),
+            ]
+        )
+
+        let viewModel = WeatherViewModel(
+            defaults: makeDefaults(),
+            snapshot: snapshot,
+            weatherService: MockWeatherService(),
+            refreshOnInit: false
+        )
+
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.highTemperature), [70, 74])
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.lowTemperature), [55, 58])
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.precipitationProbability), [20, 45])
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.condition), [.cloudy, .rain])
+
+        viewModel.toggleTemperatureUnit()
+
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.highTemperature), [21, 23])
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.lowTemperature), [13, 14])
+        XCTAssertEqual(viewModel.next10DayForecastChartPoints.map(\.precipitationProbability), [20, 45])
+        XCTAssertEqual(viewModel.next10DayDateText(formatter.date(from: "2024-11-11")!), "Mon 11/11")
+    }
+
     func testTemperatureChartLabelAlignmentUsesLeadingNearLeftEdge() {
         let alignment = TemperatureChartLabelAlignmentResolver.alignment(
             forRunStartingAt: 0,

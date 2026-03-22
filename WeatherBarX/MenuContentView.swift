@@ -141,20 +141,6 @@ private enum TemperatureTrendCardTab: String {
     }
 }
 
-private enum SecondaryTrendCardTab: String {
-    case precipitation
-    case wind
-
-    var title: String {
-        switch self {
-        case .precipitation:
-            return "Precipitation"
-        case .wind:
-            return "Wind Speed"
-        }
-    }
-}
-
 private struct TemperatureTrendCardView: View {
     @Binding var isShowingDetails: Bool
     @Binding var selectedTab: TemperatureTrendCardTab
@@ -278,6 +264,376 @@ private struct TemperatureTrendDetailsView: View {
     }
 }
 
+private struct PrecipitationWindChartView: View {
+    let title: String
+    let precipitationPoints: [WeatherViewModel.TemperatureChartPoint]
+    let windPoints: [WeatherViewModel.TemperatureChartPoint]
+    let markers: [WeatherViewModel.TimeMarker]
+    let xDomain: ClosedRange<Date>?
+    let windDomain: ClosedRange<Double>?
+    let windUnitText: String
+    let hourLabelText: (Date) -> String
+    let timeZoneIdentifier: String?
+
+    @State private var plotFrame: CGRect = .zero
+
+    private let leftAxisTicks = [0, 20, 40, 60, 80, 100]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            headerRow
+            chartBody
+            hourLabelRow
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            legendRow
+        }
+    }
+
+    private var chartBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("%")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+
+                Spacer()
+
+                Text(windUnitText)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 2)
+
+            Chart {
+                TemperaturePeriodBackgroundMarks(
+                    segments: periodBackgroundSegments,
+                    yDomain: 0 ... 100
+                )
+                TemperatureHourGridMarks(
+                    hours: xAxisMarkValues,
+                    emphasizedHours: emphasizedHourMarks,
+                    yDomain: 0 ... 100
+                )
+
+                ForEach(precipitationPoints) { point in
+                    BarMark(
+                        x: .value("Hour", point.time),
+                        y: .value("Precipitation", point.temperature)
+                    )
+                    .foregroundStyle(Color.red.opacity(0.8))
+                    .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                    .opacity(0.9)
+                }
+
+                ForEach(windPoints) { point in
+                    LineMark(
+                        x: .value("Hour", point.time),
+                        y: .value("Wind", normalizedWindValue(for: point.temperature))
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(Color.blue.opacity(0.9))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 3]))
+
+                    PointMark(
+                        x: .value("Hour", point.time),
+                        y: .value("Wind", normalizedWindValue(for: point.temperature))
+                    )
+                    .foregroundStyle(Color.blue.opacity(0.9))
+                    .symbolSize(18)
+                }
+
+                TemperatureTimeMarkerMarks(
+                    markers: markers.filter { $0.kind == .current },
+                    yDomain: 0 ... 100
+                )
+            }
+            .chartPlotStyle { plotArea in
+                plotArea
+                    .background(Color.primary.opacity(0.04))
+                    .overlay {
+                        GeometryReader { geometry in
+                            TemperaturePeriodWatermarkOverlay(
+                                segments: periodBackgroundSegments,
+                                xDomain: xDomain,
+                                plotWidth: geometry.size.width,
+                                plotHeight: geometry.size.height
+                            )
+                        }
+                    }
+                    .border(Color.primary.opacity(0.2), width: 1)
+                    .clipped()
+            }
+            .ifLet(xDomain) { chart, domain in
+                chart.chartXScale(domain: domain)
+            }
+            .chartYScale(domain: 0 ... 100)
+            .chartBackground { chartProxy in
+                GeometryReader { geometry in
+                    let frame = geometry[chartProxy.plotAreaFrame]
+
+                    Color.clear
+                        .onAppear {
+                            plotFrame = frame
+                        }
+                        .onChange(of: frame) { newFrame in
+                            plotFrame = newFrame
+                        }
+                }
+            }
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: leftAxisTicks) { value in
+                    AxisGridLine()
+                        .foregroundStyle(Color.primary.opacity(0.14))
+                    AxisTick()
+                    AxisValueLabel {
+                        if let amount = axisValue(from: value) {
+                            Text("\(amount)")
+                                .font(.system(size: 9))
+                        }
+                    }
+                }
+
+                AxisMarks(position: .trailing, values: leftAxisTicks) { value in
+                    AxisTick()
+                    AxisValueLabel {
+                        if let amount = axisValue(from: value) {
+                            Text(windAxisLabel(for: amount))
+                                .font(.system(size: 9))
+                        }
+                    }
+                }
+            }
+            .frame(height: 44)
+        }
+    }
+
+    private var legendRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 6, height: 6)
+                Text("Precipitation")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 6, height: 6)
+                Text("Wind")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2)
+    }
+
+    private var hourLabelRow: some View {
+        GeometryReader { geometry in
+            let fallbackLeftInset: CGFloat = 22
+            let leftInset = plotFrame == .zero ? fallbackLeftInset : plotFrame.minX
+            let usableWidth = plotFrame == .zero ? max(0, geometry.size.width - fallbackLeftInset - 4) : plotFrame.width
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(xAxisMarkValues.enumerated()), id: \.offset) { _, date in
+                    let label = hourLabelText(date)
+
+                    Text(label)
+                        .font(.system(size: label == "Noon" || label == "Midnight" ? 7.5 : 8))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .position(x: leftInset + usableWidth * (xPosition(for: date) ?? 0.5), y: 4)
+                }
+            }
+        }
+        .frame(height: 9)
+    }
+
+    private var xAxisMarkValues: [Date] {
+        guard let xDomain else {
+            return []
+        }
+
+        let calendar = chartCalendar
+        var marks: [Date] = []
+        var current = xDomain.lowerBound
+
+        while current <= xDomain.upperBound {
+            marks.append(current)
+            guard let next = calendar.date(byAdding: .hour, value: 3, to: current) else {
+                break
+            }
+            current = next
+        }
+
+        return marks
+    }
+
+    private var emphasizedHourMarks: Set<Date> {
+        Set(
+            xAxisMarkValues.filter { date in
+                let hour = chartCalendar.component(.hour, from: date)
+                let minute = chartCalendar.component(.minute, from: date)
+                let second = chartCalendar.component(.second, from: date)
+                return minute == 0 && second == 0 && (hour == 0 || hour == 12)
+            }
+        )
+    }
+
+    private var periodBackgroundSegments: [TemperaturePeriodBackgroundSegment] {
+        guard let xDomain else {
+            return []
+        }
+
+        var segments: [TemperaturePeriodBackgroundSegment] = []
+        var currentStart = xDomain.lowerBound
+
+        while currentStart < xDomain.upperBound {
+            let hour = chartCalendar.component(.hour, from: currentStart)
+            let nextBoundaryHour = hour < 12 ? 12 : 24
+
+            let nextBoundary = nextBoundaryHour == 24
+                ? (chartCalendar.date(byAdding: .day, value: 1, to: chartCalendar.startOfDay(for: currentStart)) ?? xDomain.upperBound)
+                : (chartCalendar.date(bySettingHour: 12, minute: 0, second: 0, of: currentStart) ?? xDomain.upperBound)
+
+            let segmentEnd = min(nextBoundary, xDomain.upperBound)
+            if currentStart < segmentEnd {
+                segments.append(
+                    TemperaturePeriodBackgroundSegment(
+                        start: currentStart,
+                        end: segmentEnd,
+                        isAM: hour < 12
+                    )
+                )
+            }
+
+            currentStart = segmentEnd
+        }
+
+        return segments
+    }
+
+    private func normalizedWindValue(for windValue: Int) -> Double {
+        guard let windDomain else {
+            return 0
+        }
+
+        let range = windDomain.upperBound - windDomain.lowerBound
+        guard range > 0 else {
+            return 50
+        }
+
+        return ((Double(windValue) - windDomain.lowerBound) / range) * 100
+    }
+
+    private func xPosition(for date: Date) -> CGFloat? {
+        guard let xDomain else {
+            return nil
+        }
+
+        let total = xDomain.upperBound.timeIntervalSince(xDomain.lowerBound)
+        guard total > 0 else {
+            return nil
+        }
+
+        let offset = date.timeIntervalSince(xDomain.lowerBound)
+        return min(max(CGFloat(offset / total), 0), 1)
+    }
+
+    private func axisValue(from value: AxisValue) -> Int? {
+        if let amount = value.as(Int.self) {
+            return amount
+        }
+
+        if let amount = value.as(Double.self) {
+            return Int(amount.rounded())
+        }
+
+        return nil
+    }
+
+    private func windAxisLabel(for precipitationScaleValue: Int) -> String {
+        guard let windDomain else {
+            return "--"
+        }
+
+        let fraction = Double(precipitationScaleValue) / 100
+        let windValue = windDomain.lowerBound + ((windDomain.upperBound - windDomain.lowerBound) * fraction)
+        return String(Int(windValue.rounded()))
+    }
+
+    private var chartCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let timeZoneIdentifier,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            calendar.timeZone = timeZone
+        }
+        return calendar
+    }
+}
+
+private struct NextTenDayForecastCardView: View {
+    let forecasts: [WeatherViewModel.DailyForecastChartPoint]
+    let temperatureText: (Int?) -> String
+    let dateText: (Date) -> String
+
+    var body: some View {
+        WeatherCard(title: "Next 5 Days") {
+            HStack(alignment: .top, spacing: 2) {
+                ForEach(forecasts) { forecast in
+                    forecastTile(for: forecast)
+                }
+            }
+        }
+    }
+
+    private func forecastTile(for forecast: WeatherViewModel.DailyForecastChartPoint) -> some View {
+        VStack(spacing: 3) {
+            Text(dateText(forecast.date))
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 0) {
+                Text(temperatureText(forecast.highTemperature))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.red)
+                Text("/")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(temperatureText(forecast.lowTemperature))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.blue)
+            }
+
+            Image(systemName: forecast.condition.iconName(isDaylight: true))
+                .font(.system(size: 16))
+                .foregroundStyle(.orange)
+                .frame(height: 18)
+
+            HStack(spacing: 2) {
+                Image(systemName: "umbrella.fill")
+                    .font(.system(size: 7))
+                    .foregroundStyle(.red)
+                Text("\(forecast.precipitationProbability)%")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .padding(.vertical, 2)
+    }
+}
+
 private struct TemperatureTrendChartContentView: View {
     let model: TemperatureTrendCardModel
     private let hourMarkOffsets = [0, 3, 6, 9, 12, 15, 18, 21, 24]
@@ -313,6 +669,16 @@ private struct TemperatureTrendChartContentView: View {
             .chartPlotStyle { plotArea in
                 plotArea
                     .background(Color.primary.opacity(0.04))
+                    .overlay {
+                        GeometryReader { geometry in
+                            TemperaturePeriodWatermarkOverlay(
+                                segments: periodBackgroundSegments,
+                                xDomain: model.xDomain,
+                                plotWidth: geometry.size.width,
+                                plotHeight: geometry.size.height
+                            )
+                        }
+                    }
                     .border(Color.primary.opacity(0.2), width: 1)
                     .clipped()
             }
@@ -375,11 +741,11 @@ private struct TemperatureTrendChartContentView: View {
                         .padding(.vertical, 1)
                         .background(
                             Capsule()
-                                .fill(markerColor(for: marker).opacity(0.22))
+                                .fill(markerLabelColor(for: marker).opacity(0.22))
                         )
                         .overlay(
                             Capsule()
-                                .stroke(markerColor(for: marker).opacity(0.55), lineWidth: 1)
+                                .stroke(markerLabelColor(for: marker).opacity(0.55), lineWidth: 1)
                         )
                         .help(model.markerLabelText(marker))
                         .fixedSize()
@@ -505,6 +871,17 @@ private struct TemperatureTrendChartContentView: View {
         }
     }
 
+    private func markerLabelColor(for marker: WeatherViewModel.TimeMarker) -> Color {
+        switch marker.kind {
+        case .sunrise:
+            return Color.indigo.opacity(0.55)
+        case .current:
+            return Color.red.opacity(0.7)
+        case .sunset:
+            return Color.yellow.opacity(0.75)
+        }
+    }
+
     private var chartCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         if let timeZoneIdentifier = model.timeZoneIdentifier,
@@ -582,6 +959,14 @@ private struct TemperaturePeriodBackgroundSegment: Identifiable {
     var id: String {
         "\(start.timeIntervalSinceReferenceDate)-\(end.timeIntervalSinceReferenceDate)-\(isAM)"
     }
+
+    var midpoint: Date {
+        Date(timeIntervalSinceReferenceDate: (start.timeIntervalSinceReferenceDate + end.timeIntervalSinceReferenceDate) / 2)
+    }
+
+    func watermarkY(in yDomain: ClosedRange<Double>) -> Double {
+        yDomain.lowerBound + ((yDomain.upperBound - yDomain.lowerBound) * 0.5)
+    }
 }
 
 private struct TemperaturePeriodBackgroundMarks: ChartContent {
@@ -600,6 +985,40 @@ private struct TemperaturePeriodBackgroundMarks: ChartContent {
                 .foregroundStyle(segment.isAM ? Color.blue.opacity(0.06) : Color.orange.opacity(0.06))
             }
         }
+    }
+}
+
+private struct TemperaturePeriodWatermarkOverlay: View {
+    let segments: [TemperaturePeriodBackgroundSegment]
+    let xDomain: ClosedRange<Date>?
+    let plotWidth: CGFloat
+    let plotHeight: CGFloat
+
+    var body: some View {
+        if let xDomain, plotWidth > 0, plotHeight > 0 {
+            ZStack(alignment: .topLeading) {
+                ForEach(segments) { segment in
+                    Text(segment.isAM ? "AM" : "PM")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.12))
+                        .position(
+                            x: plotWidth * xPosition(for: segment.midpoint, in: xDomain),
+                            y: plotHeight * 0.5
+                        )
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func xPosition(for date: Date, in xDomain: ClosedRange<Date>) -> CGFloat {
+        let total = xDomain.upperBound.timeIntervalSince(xDomain.lowerBound)
+        guard total > 0 else {
+            return 0.5
+        }
+
+        let offset = date.timeIntervalSince(xDomain.lowerBound)
+        return min(max(CGFloat(offset / total), 0), 1)
     }
 }
 
@@ -1023,7 +1442,6 @@ struct MenuContentView: View {
     @State private var addLocationError: String?
     @State private var isShowingWeatherDetails = false
     @State private var selectedTemperatureChartTab: TemperatureTrendCardTab = .next24Hours
-    @State private var selectedSecondaryChartTab: SecondaryTrendCardTab = .precipitation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1212,74 +1630,32 @@ struct MenuContentView: View {
                     .accessibilityIdentifier("temperature-trend-chart")
             }
 
-            if !viewModel.next24HourPrecipitationChartPoints.isEmpty || !viewModel.next24HourWindChartPoints.isEmpty {
+            if !viewModel.next24HourPrecipitationChartPoints.isEmpty && !viewModel.next24HourWindChartPoints.isEmpty {
                 WeatherCard(title: "") {
-                    HStack(spacing: 8) {
-                        Button(action: {
-                            selectedSecondaryChartTab = .precipitation
-                        }) {
-                            Text(SecondaryTrendCardTab.precipitation.title)
-                                .font(.caption.weight(selectedSecondaryChartTab == .precipitation ? .semibold : .regular))
-                                .foregroundStyle(selectedSecondaryChartTab == .precipitation ? .primary : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(viewModel.next24HourPrecipitationChartPoints.isEmpty)
-
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-
-                        Button(action: {
-                            selectedSecondaryChartTab = .wind
-                        }) {
-                            Text(SecondaryTrendCardTab.wind.title)
-                                .font(.caption.weight(selectedSecondaryChartTab == .wind ? .semibold : .regular))
-                                .foregroundStyle(selectedSecondaryChartTab == .wind ? .primary : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(viewModel.next24HourWindChartPoints.isEmpty)
-                    }
-
-                    TemperatureTrendChartContentView(
-                        model: selectedSecondaryChartTab == .wind
-                            ? TemperatureTrendCardModel(
-                                title: "Wind Speed",
-                                points: viewModel.next24HourWindChartPoints,
-                                high: nil,
-                                highAt: nil,
-                                low: nil,
-                                lowAt: nil,
-                                markers: viewModel.next24HourWindChartTimeMarkers,
-                                xDomain: viewModel.next24HourWindChartXDomain,
-                                yDomain: viewModel.next24HourWindChartYDomain,
-                                valueText: viewModel.windChartValueText(_:),
-                                markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
-                                markerTimeText: viewModel.temperatureChartTimeText(_:),
-                                hourLabelText: viewModel.temperatureChartHourLabelText(_:),
-                                timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
-                                details: nil
-                            )
-                            : TemperatureTrendCardModel(
-                                title: "Precipitation",
-                                points: viewModel.next24HourPrecipitationChartPoints,
-                                high: nil,
-                                highAt: nil,
-                                low: nil,
-                                lowAt: nil,
-                                markers: viewModel.next24HourPrecipitationChartTimeMarkers,
-                                xDomain: viewModel.next24HourPrecipitationChartXDomain,
-                                yDomain: viewModel.next24HourPrecipitationChartYDomain,
-                                valueText: viewModel.precipitationChartValueText(_:),
-                                markerLabelText: viewModel.temperatureChartMarkerLabel(for:),
-                                markerTimeText: viewModel.temperatureChartTimeText(_:),
-                                hourLabelText: viewModel.temperatureChartHourLabelText(_:),
-                                timeZoneIdentifier: viewModel.chartTimeZoneIdentifier,
-                                details: nil
-                            )
+                    PrecipitationWindChartView(
+                        title: "Next 24 Hours",
+                        precipitationPoints: viewModel.next24HourPrecipitationChartPoints,
+                        windPoints: viewModel.next24HourWindChartPoints,
+                        markers: viewModel.next24HourWindChartTimeMarkers,
+                        xDomain: viewModel.next24HourWindChartXDomain,
+                        windDomain: viewModel.next24HourWindChartYDomain,
+                        windUnitText: viewModel.windChartUnitText,
+                        hourLabelText: viewModel.temperatureChartHourLabelText(_:),
+                        timeZoneIdentifier: viewModel.chartTimeZoneIdentifier
                     )
                 }
-                .id("secondary-card-\(selectedSecondaryChartTab.rawValue)-\(viewModel.temperatureUnit)")
+                .id("secondary-card-\(viewModel.temperatureUnit)")
                 .accessibilityIdentifier("secondary-trend-chart")
+            }
+
+            if !viewModel.next10DayForecastChartPoints.isEmpty {
+                NextTenDayForecastCardView(
+                    forecasts: viewModel.next10DayForecastChartPoints,
+                    temperatureText: viewModel.temperatureChartValueText(_:),
+                    dateText: viewModel.next10DayLabelText(_:)
+                )
+                .id("ten-day-card-\(viewModel.temperatureUnit)")
+                .accessibilityIdentifier("ten-day-forecast-chart")
             }
 
             Divider()
