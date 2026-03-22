@@ -209,7 +209,7 @@ private struct TemperatureTrendDetailsView: View {
     let sunsetText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 3) {
             Button(action: {
                 isExpanded.toggle()
             }) {
@@ -280,7 +280,7 @@ private struct PrecipitationWindChartView: View {
     private let leftAxisTicks = [0, 20, 40, 60, 80, 100]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             headerRow
             chartBody
             hourLabelRow
@@ -378,7 +378,7 @@ private struct PrecipitationWindChartView: View {
                             )
                         }
                     }
-                    .border(Color.primary.opacity(0.2), width: 1)
+                    .border(Color.primary.opacity(0.56), width: 1)
                     .clipped()
             }
             .ifLet(xDomain) { chart, domain in
@@ -402,7 +402,7 @@ private struct PrecipitationWindChartView: View {
             .chartYAxis {
                 AxisMarks(position: .leading, values: leftAxisTicks) { value in
                     AxisGridLine()
-                        .foregroundStyle(Color.primary.opacity(0.14))
+                        .foregroundStyle(Color.secondary.opacity(0.3))
                     AxisTick()
                     AxisValueLabel {
                         if let amount = axisValue(from: value) {
@@ -693,10 +693,10 @@ private struct NextTenDayForecastCardView: View {
 
             HStack(spacing: 2) {
                 Image(systemName: "umbrella.fill")
-                    .font(.system(size: 7))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.red)
                 Text("\(forecast.precipitationProbability)%")
-                    .font(.system(size: 8))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -711,8 +711,9 @@ private struct TemperatureTrendChartContentView: View {
     @State private var plotFrame: CGRect = .zero
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             topMarkerRow
+                .padding(.bottom, 6)
 
             Chart {
                 TemperaturePeriodBackgroundMarks(
@@ -750,7 +751,7 @@ private struct TemperatureTrendChartContentView: View {
                             )
                         }
                     }
-                    .border(Color.primary.opacity(0.2), width: 1)
+                    .border(Color.primary.opacity(0.56), width: 1)
                     .clipped()
             }
             .ifLet(model.xDomain) { chart, domain in
@@ -776,7 +777,7 @@ private struct TemperatureTrendChartContentView: View {
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine()
-                        .foregroundStyle(Color.primary.opacity(0.14))
+                        .foregroundStyle(Color.secondary.opacity(0.3))
                     AxisTick()
                     AxisValueLabel {
                         if let temperature = axisTemperature(from: value) {
@@ -787,6 +788,7 @@ private struct TemperatureTrendChartContentView: View {
                 }
             }
             .frame(height: 44)
+            .padding(.bottom, 3)
 
             hourLabelRow
         }
@@ -804,6 +806,7 @@ private struct TemperatureTrendChartContentView: View {
                         HStack(spacing: 3) {
                             Image(systemName: marker.kind == .sunrise ? "sunrise" : "sunset.fill")
                                 .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(.black)
                             Text(model.markerTimeText(marker.time))
                                 .font(.caption2)
                         }
@@ -820,7 +823,10 @@ private struct TemperatureTrendChartContentView: View {
                         )
                         .help(model.markerLabelText(marker))
                         .fixedSize()
-                        .position(x: leftInset + usableWidth * xPosition, y: 6)
+                        .position(
+                            x: leftInset + usableWidth * xPosition,
+                            y: geometry.size.height
+                        )
                     }
                 }
             }
@@ -1071,7 +1077,7 @@ private struct TemperaturePeriodWatermarkOverlay: View {
                 ForEach(segments) { segment in
                     Text(segment.isAM ? "AM" : "PM")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.primary.opacity(0.12))
+                        .foregroundStyle(Color.primary.opacity(0.24))
                         .position(
                             x: plotWidth * xPosition(for: segment.midpoint, in: xDomain),
                             y: plotHeight * 0.5
@@ -1106,8 +1112,12 @@ private struct TemperatureHourGridMarks: ChartContent {
                     yStart: .value("Grid Min", yDomain.lowerBound),
                     yEnd: .value("Grid Max", yDomain.upperBound)
                 )
-                .foregroundStyle(Color.primary.opacity(0.18))
-                .lineStyle(StrokeStyle(lineWidth: emphasizedHours.contains(hour) ? 3 : 1))
+                .foregroundStyle(
+                    emphasizedHours.contains(hour)
+                    ? Color.primary.opacity(0.56)
+                    : Color.primary.opacity(0.18)
+                )
+                .lineStyle(StrokeStyle(lineWidth: 1))
             }
         }
     }
@@ -1278,6 +1288,7 @@ private struct TemperatureTimeMarkerMarks: ChartContent {
                     .symbol {
                         Image(systemName: "arrowshape.down.fill")
                             .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.black)
                     }
                     .symbolSize(30)
                     .foregroundStyle(markerColor(for: marker))
@@ -1289,11 +1300,11 @@ private struct TemperatureTimeMarkerMarks: ChartContent {
     private func markerColor(for marker: WeatherViewModel.TimeMarker) -> Color {
         switch marker.kind {
         case .sunrise:
-            return Color.yellow.opacity(0.45)
+            return .black
         case .current:
             return Color.red.opacity(0.55)
         case .sunset:
-            return Color.indigo.opacity(0.35)
+            return .black
         }
     }
 }
