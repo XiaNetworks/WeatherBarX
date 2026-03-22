@@ -1615,33 +1615,45 @@ struct MenuContentView: View {
                         Text("Loading")
                     }
                 } else {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 0) {
                         Label(viewModel.temperatureText, systemImage: viewModel.conditionIconName)
+
+                        Spacer(minLength: 6)
 
                         Divider()
                             .frame(height: 18)
 
+                        Spacer(minLength: 6)
+
                         HStack(spacing: 3) {
                             Image(systemName: "wind")
                             Text(viewModel.windInlineText)
+                                .lineLimit(1)
                         }
                         .foregroundStyle(.secondary)
                         .help("Wind")
 
+                        Spacer(minLength: 6)
+
                         HStack(spacing: 3) {
                             Image(systemName: "umbrella.fill")
                             Text(viewModel.precipitationInlineText)
+                                .lineLimit(1)
                         }
                         .foregroundStyle(.secondary)
                         .help("Precipitation")
 
+                        Spacer(minLength: 6)
+
                         HStack(spacing: 3) {
                             Image(systemName: "humidity.fill")
                             Text(viewModel.humidityInlineText)
+                                .lineLimit(1)
                         }
                         .foregroundStyle(.secondary)
                         .help("Humidity")
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .accessibilityIdentifier("temperature-label")
