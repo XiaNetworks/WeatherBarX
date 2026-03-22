@@ -1776,7 +1776,7 @@ final class WeatherViewModel: ObservableObject {
         }
 
         return snapshot.hourlyTemperatures.filter {
-            $0.time >= domain.lowerBound && $0.time < domain.upperBound
+            domain.contains($0.time)
         }
     }
 

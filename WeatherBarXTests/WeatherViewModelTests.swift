@@ -580,6 +580,7 @@ final class WeatherViewModelTests: XCTestCase {
         let todayEarly = formatter.date(from: "2024-11-11 00:00")!
         let currentTime = formatter.date(from: "2024-11-11 14:00")!
         let todayLate = formatter.date(from: "2024-11-11 23:00")!
+        let tomorrowMidnight = formatter.date(from: "2024-11-12 00:00")!
         let tomorrowMorning = formatter.date(from: "2024-11-12 08:00")!
         let tomorrowNoon = formatter.date(from: "2024-11-12 12:00")!
         let tomorrowLate = formatter.date(from: "2024-11-12 15:00")!
@@ -611,6 +612,7 @@ final class WeatherViewModelTests: XCTestCase {
                 .init(time: todayEarly, temperature: 64),
                 .init(time: currentTime, temperature: 72),
                 .init(time: todayLate, temperature: 76),
+                .init(time: tomorrowMidnight, temperature: 71),
                 .init(time: tomorrowMorning, temperature: 67),
                 .init(time: tomorrowNoon, temperature: 70),
                 .init(time: tomorrowLate, temperature: 73),
@@ -626,10 +628,10 @@ final class WeatherViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.temperatureChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 00:00"))
         XCTAssertEqual(viewModel.temperatureChartXDomain?.upperBound, formatter.date(from: "2024-11-12 00:00"))
-        XCTAssertEqual(viewModel.temperatureChartPoints.map(\.time), [todayEarly, currentTime, todayLate])
+        XCTAssertEqual(viewModel.temperatureChartPoints.map(\.time), [todayEarly, currentTime, todayLate, tomorrowMidnight])
         XCTAssertEqual(viewModel.next24HourTemperatureChartXDomain?.lowerBound, formatter.date(from: "2024-11-11 12:00"))
         XCTAssertEqual(viewModel.next24HourTemperatureChartXDomain?.upperBound, formatter.date(from: "2024-11-12 12:00"))
-        XCTAssertEqual(viewModel.next24HourTemperatureChartPoints.map(\.time), [currentTime, todayLate, tomorrowMorning, tomorrowNoon])
+        XCTAssertEqual(viewModel.next24HourTemperatureChartPoints.map(\.time), [currentTime, todayLate, tomorrowMidnight, tomorrowMorning, tomorrowNoon])
         XCTAssertEqual(viewModel.next24HourTemperatureChartHigh, 76)
         XCTAssertEqual(viewModel.next24HourTemperatureChartHighAt, todayLate)
         XCTAssertEqual(viewModel.next24HourTemperatureChartLow, 67)
