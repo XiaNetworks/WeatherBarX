@@ -1478,7 +1478,8 @@ final class WeatherViewModel: ObservableObject {
         }
 
         let displayHour = hour > 12 ? hour - 12 : hour
-        return "\(displayHour)"
+        let meridiem = hour < 12 ? "am" : "pm"
+        return "\(displayHour)\(meridiem)"
     }
 
     func next10DayLabelText(_ date: Date) -> String {
