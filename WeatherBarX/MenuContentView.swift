@@ -1075,7 +1075,7 @@ private struct TemperaturePeriodWatermarkOverlay: View {
         if let xDomain, plotWidth > 0, plotHeight > 0 {
             ZStack(alignment: .topLeading) {
                 ForEach(segments) { segment in
-                    Text(segment.isAM ? "AM" : "PM")
+                    Text(verbatim: segment.isAM ? "AM" : "PM")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.primary.opacity(0.24))
                         .position(

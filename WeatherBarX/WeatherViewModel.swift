@@ -1866,9 +1866,9 @@ final class WeatherViewModel: ObservableObject {
 
     private static func makeTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = appLocale
-        formatter.timeStyle = .short
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateStyle = .none
+        formatter.dateFormat = "h:mm a"
         if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
             formatter.timeZone = timeZone
         }
@@ -1877,7 +1877,7 @@ final class WeatherViewModel: ObservableObject {
 
     private static func makeChartMarkerTimeFormatter(timeZoneIdentifier: String?) -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = appLocale
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateStyle = .none
         formatter.dateFormat = "h:mm a"
         if let timeZoneIdentifier, let timeZone = TimeZone(identifier: timeZoneIdentifier) {
