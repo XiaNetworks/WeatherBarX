@@ -1815,7 +1815,7 @@ struct MenuContentView: View {
             Divider()
 
             VStack(alignment: .center, spacing: 2) {
-                Text("WeatherBarX version 1.0")
+                Text("WeatherBarX version 1.1.1")
                 Text("by XiaNetworks")
             }
             .font(.system(size: 9))
