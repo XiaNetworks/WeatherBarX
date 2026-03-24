@@ -1811,8 +1811,20 @@ struct MenuContentView: View {
                         .accessibilityIdentifier("temperature-unit-button")
                 }
             }
+
+            Divider()
+
+            VStack(alignment: .center, spacing: 2) {
+                Text("WeatherBarX version 1.0")
+                Text("by XiaNetworks")
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(MenuDetailColors.meta)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding()
+        .padding(.top)
+        .padding(.horizontal)
+        .padding(.bottom, 6)
         .frame(width: 300)
     }
 
